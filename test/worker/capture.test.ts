@@ -26,7 +26,7 @@ const FRI = Date.parse("2026-11-20T13:00:00Z"); // 15:00 п'ятниці за К
 const MIN = 60_000;
 
 beforeEach(async () => {
-  for (const t of ["ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
+  for (const t of ["points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -113,7 +113,7 @@ describe("S1.4 квитанція", () => {
     const msg = tg.sent()[0]!;
     const lines = textOf(msg).split("\n");
     expect(RECEIPT_POOL).toContain(lines[0]);
-    expect(lines.slice(1)).toEqual(["📅 Лікар — завтра, сб 21.11, 10:00", "☑️ Корм коту — без дати"]);
+    expect(lines.slice(1)).toEqual(["📅 Лікар — завтра, сб 21.11, 10:00", "☑️ Корм коту — без дати", "+1 ✨"]); // S1.9: очко в квитанції
     expect(msg.body.parse_mode).toBe("HTML");
     const kb = (msg.body.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard;
     expect(kb).toEqual([[{ text: "✏️ Не так", callback_data: `fix:${caps[0]!.id}` }]]); // питання немає → без «Уточнити»
@@ -189,7 +189,7 @@ describe("S1.4 квитанція", () => {
   it("1.4.f: /today, /foo, порожній текст — без захоплення й без ШІ", async () => {
     const tg = mockTelegram();
     const ai = replyWith(FOOD);
-    await send(textUpdate("/today"), baseEnv(), d(ai.client));
+    await send(textUpdate("/foo"), baseEnv(), d(ai.client)); // /today і /export — справжні команди з 1.5 (commands.test.ts)
     await send(textUpdate("/foo bar"), baseEnv(), d(ai.client));
     await send(textUpdate("   "), baseEnv(), d(ai.client));
     expect(await count("captures")).toBe(0);

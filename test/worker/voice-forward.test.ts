@@ -19,7 +19,7 @@ const FRI = Date.parse("2026-11-20T13:00:00Z");
 const MIN = 60_000;
 
 beforeEach(async () => {
-  for (const t of ["ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
+  for (const t of ["points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -96,7 +96,7 @@ describe("S1.7 голосове", () => {
     expect(ai.requests[0]!.user).toContain('<message source="voice">');
     const lines = textOf(tg.sent()[0]!).split("\n");
     expect(lines[1]).toBe("🎙 <i>завтра о десятій лікар і купити корм</i>");
-    expect(lines.slice(2)).toEqual(["📅 Лікар — завтра, сб 21.11, 10:00", "☑️ Корм коту — без дати"]);
+    expect(lines.slice(2)).toEqual(["📅 Лікар — завтра, сб 21.11, 10:00", "☑️ Корм коту — без дати", "+1 ✨"]);
   });
 
   it("розпізнаний текст екранується в HTML (помилка STT не ламає розмітку)", async () => {

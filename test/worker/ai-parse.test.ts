@@ -20,7 +20,7 @@ const ISO = (ms: number | null) => (ms === null ? null : new Date(ms).toISOStrin
 const NOW_LATE = Date.parse("2026-11-20T22:30:00Z"); // 00:30 суботи 21.11 за Києвом, UTC-дата ще 20-те
 
 beforeEach(async () => {
-  for (const t of ["ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
+  for (const t of ["points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
 });
 
 interface Mock {

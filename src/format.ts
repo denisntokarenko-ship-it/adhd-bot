@@ -2,7 +2,7 @@
 import type { ParsedItem } from "./ai/parse";
 import type { Item } from "./db/items";
 import { localIso } from "./time";
-import { BTN_CLARIFY, HEARD_PREFIX, BTN_WRONG, CLARIFY_QUESTION_HEAD, CLARIFY_QUESTION_TAIL, MORE_PREFIX, NO_DATE, clarifyReason } from "./texts";
+import { BTN_CLARIFY, HEARD_PREFIX, POINT_LINE, BTN_WRONG, CLARIFY_QUESTION_HEAD, CLARIFY_QUESTION_TAIL, MORE_PREFIX, NO_DATE, clarifyReason } from "./texts";
 
 export const TG_LIMIT = 4096;
 const HEARD_MAX = 500;
@@ -27,6 +27,13 @@ export function formatDue(dueAt: number, allDay: boolean, tz: string, now: numbe
   return `${rel}${wd} ${date}${allDay ? "" : `, ${due.slice(11, 16)}`}`;
 }
 
+// «пт 20.11» — коротка дата для заголовка /today; рік не показується, це завжди «сьогодні» (НФ-1: через tz, не UTC).
+export function shortDate(instant: number, tz: string): string {
+  const iso = localIso(instant, tz);
+  const wd = new Intl.DateTimeFormat("uk-UA", { timeZone: tz, weekday: "short" }).format(new Date(instant)).replace(".", "");
+  return `${wd} ${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+}
+
 export interface ReceiptEntry {
   kind: Item["kind"];
   title: string;
@@ -49,6 +56,7 @@ export function buildReceipt(
   tz: string,
   now: number,
   heard?: string, // розпізнаний голос: показуємо курсивом, щоб помилку STT було видно (S1.7)
+  points = 0, // очки за це захоплення: «+1 ✨» окремим рядком після переліку (S1.9)
 ): Receipt {
   const lines = entries.map((e) => {
     const when = e.dueAt === null ? NO_DATE : formatDue(e.dueAt, e.allDay, tz, now);
@@ -66,7 +74,8 @@ export function buildReceipt(
   }
   const head = escapeHtml(intro);
   const heardLine = heard === undefined ? [] : [`${HEARD_PREFIX} <i>${escapeHtml(clip(heard, HEARD_MAX))}</i>`];
-  const reserve = head.length + heardLine.join("").length + tail.join("\n").length + 40;
+  const pointLine = points > 0 ? [POINT_LINE] : [];
+  const reserve = head.length + heardLine.join("").length + tail.join("\n").length + pointLine.join("").length + 40;
   const shown: string[] = [];
   let used = reserve;
   for (const line of lines) {
@@ -77,5 +86,5 @@ export function buildReceipt(
   if (shown.length < lines.length) shown.push(`${MORE_PREFIX} ${lines.length - shown.length}`);
   const buttons = [{ text: BTN_WRONG, data: `fix:${captureId}` }];
   if (asked.length > 0) buttons.push({ text: BTN_CLARIFY, data: `clar:${captureId}` });
-  return { text: [head, ...heardLine, ...shown, ...tail].join("\n"), buttons };
+  return { text: [head, ...heardLine, ...shown, ...pointLine, ...tail].join("\n"), buttons };
 }

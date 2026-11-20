@@ -39,22 +39,49 @@ export function mockTelegram(opts: { failSend?: boolean; failDownload?: boolean 
     const m = /\/bot[^/]+\/(\w+)/.exec(url);
     const method = m?.[1] ?? "unknown";
     let body: Record<string, unknown> = {};
-    try {
-      body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
-    } catch {
-      /* multipart не потрібен */
+    const raw = init?.body;
+    if (raw !== undefined && raw !== null && typeof raw !== "string") {
+      // Multipart (sendDocument, S1.11): grammY шле потік; розбираємо поля й файл `document` у { name, text }.
+      const text = await new Response(raw as BodyInit).text();
+      const boundary = text.slice(0, text.indexOf("\r\n"));
+      const files: Record<string, { name: string; text: string }> = {};
+      for (const part of text.split(boundary).slice(1)) {
+        const at = part.indexOf("\r\n\r\n");
+        if (at < 0) continue;
+        const head = part.slice(0, at);
+        const content = part.slice(at + 4).replace(/\r\n$/, "");
+        const name = /name="?([^";\r\n]+)/.exec(head)?.[1];
+        const filename = /filename="?([^";\r\n]+)/.exec(head)?.[1];
+        if (name === undefined) continue;
+        if (filename === undefined) body[name] = content;
+        else files[name] = { name: filename, text: content };
+      }
+      // grammY шле файл за схемою attach://<id>: у `document` лежить посилання на частину.
+      const ref = typeof body.document === "string" ? body.document.replace("attach://", "") : "";
+      if (files[ref]) body.document = files[ref];
+    } else {
+      try {
+        body = JSON.parse(String(raw ?? "{}")) as Record<string, unknown>;
+      } catch {
+        /* не JSON */
+      }
     }
     calls.push({ method, body });
     if (opts.failSend) throw new TypeError("network down");
     const result =
-      method === "sendMessage"
+      method === "sendMessage" || method === "sendDocument"
         ? { message_id: 1, date: 0, chat: { id: 1, type: "private" } }
         : method === "getFile"
           ? { file_id: String(body.file_id), file_unique_id: "u", file_path: "voice/file_1.oga" }
           : true;
     return new Response(JSON.stringify({ ok: true, result }), { headers: { "content-type": "application/json" } });
   });
-  return { calls, spy, sent: () => calls.filter((c) => c.method === "sendMessage") };
+  return {
+    calls,
+    spy,
+    sent: () => calls.filter((c) => c.method === "sendMessage"),
+    docs: () => calls.filter((c) => c.method === "sendDocument"),
+  };
 }
 
 let updateId = 1000;

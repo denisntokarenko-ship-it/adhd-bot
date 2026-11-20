@@ -15,7 +15,7 @@ const KYIV = "Europe/Kyiv";
 
 beforeEach(async () => {
   // від дочірніх до батьківських: FK
-  for (const t of ["ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
+  for (const t of ["points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users"]) await DB.prepare(`DELETE FROM ${t}`).run();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -26,13 +26,13 @@ const note = (title: string, extra: Partial<Parameters<typeof create>[2]> = {}) 
 const names = async (sql: string) => (await DB.prepare(sql).all<{ name: string }>()).results.map((r) => r.name);
 
 describe("S1.1 міграція 0002", () => {
-  it("1.1.a: таблиці, індекси й тригери зі спеки; повторний прогін без помилки; points_ledger і parent_id ще немає", async () => {
+  it("1.1.a: таблиці, індекси й тригери зі спеки; повторний прогін без помилки; points_ledger з'явився в 0003 (1.5); parent_id ще немає", async () => {
     const tables = await names(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations' AND name NOT LIKE 'items_fts_%' ORDER BY name",
     );
-    expect(tables).toEqual(["ai_calls", "capture_fixes", "captures", "heartbeat", "items", "items_fts", "users"]);
+    expect(tables).toEqual(["ai_calls", "capture_fixes", "captures", "heartbeat", "items", "items_fts", "points_ledger", "users"]);
     const indexes = await names("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name");
-    expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_user_status_due"]);
+    expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_user_status_due", "ix_ledger_user"]);
     const triggers = await names("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name");
     expect(triggers).toEqual(["items_fts_ad", "items_fts_ai", "items_fts_au", "tg_captures_not_fix", "tg_fixes_not_capture"]);
     expect(await names("SELECT name FROM pragma_table_info('items') ORDER BY cid")).toEqual([

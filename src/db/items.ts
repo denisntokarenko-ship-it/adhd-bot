@@ -116,6 +116,60 @@ export async function listOpen(userId: number, db: Db, opts: ListOpenOptions = {
   return res.results;
 }
 
+// Для /today (S1.10): відкриті записи цієї доби `[from, to)` (межі — `dayBounds(tz, now)` на боці виклику, НФ-1) —
+// спершу «на весь день», потім за часом — і до `undatedLimit` найновіших без дати з їх повною кількістю.
+// `pending` — запис є запасною нотаткою, яку ще не розібрано (S1.10.d). Прострочених тут немає за побудовою: вчорашнє не вибирається.
+export interface TodayItem extends Item {
+  pending: number;
+}
+export interface Today {
+  dated: TodayItem[];
+  undated: TodayItem[];
+  undatedTotal: number;
+}
+const PENDING_FLAG =
+  "EXISTS (SELECT 1 FROM captures c WHERE c.id = i.capture_id AND c.user_id = i.user_id AND c.status = 'pending') AS pending";
+
+export async function listToday(
+  userId: number,
+  db: Db,
+  from: number,
+  to: number,
+  undatedLimit: number,
+): Promise<Today> {
+  const d1 = d1Of(db);
+  const [dated, undated, total] = await d1.batch<TodayItem & { n: number }>([
+    d1
+      .prepare(
+        `SELECT ${SEARCH_COLUMNS}, ${PENDING_FLAG} FROM items i
+         WHERE i.user_id = ?1 AND i.status = 'open' AND i.due_at >= ?2 AND i.due_at < ?3
+         ORDER BY i.all_day DESC, i.due_at, i.id`,
+      )
+      .bind(userId, from, to),
+    d1
+      .prepare(
+        `SELECT ${SEARCH_COLUMNS}, ${PENDING_FLAG} FROM items i
+         WHERE i.user_id = ?1 AND i.status = 'open' AND i.due_at IS NULL
+         ORDER BY i.id DESC LIMIT ?2`,
+      )
+      .bind(userId, undatedLimit),
+    d1
+      .prepare("SELECT COUNT(*) AS n FROM items WHERE user_id = ?1 AND status = 'open' AND due_at IS NULL")
+      .bind(userId),
+  ]);
+  return {
+    dated: dated?.results ?? [],
+    undated: undated?.results ?? [],
+    undatedTotal: total?.results[0]?.n ?? 0,
+  };
+}
+
+// Усі записи користувача, усіх статусів і всі колонки — для /export (S1.11).
+export async function listAll(userId: number, db: Db): Promise<Item[]> {
+  const res = await d1Of(db).prepare(`SELECT ${COLUMNS} FROM items WHERE user_id = ?1 ORDER BY id`).bind(userId).all<Item>();
+  return res.results;
+}
+
 // Чужий або неіснуючий id → null (рядок не змінюється).
 export async function update(userId: number, db: Db, id: number, patch: ItemPatch): Promise<Item | null> {
   const sets: string[] = [];

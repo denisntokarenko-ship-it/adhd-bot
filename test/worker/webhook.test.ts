@@ -5,7 +5,7 @@ import { FALLBACK_POOL, GREET_POOL, PRIVATE_BOT_TEXT, UNSUPPORTED_POOL } from ".
 import { NOW, baseEnv, deps, mockTelegram, post, send, textUpdate, userRows } from "./helpers";
 
 beforeEach(async () => {
-  for (const t of ["ai_calls", "items", "capture_fixes", "captures", "users"]) await env.DB!.prepare(`DELETE FROM ${t}`).run();
+  for (const t of ["points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users"]) await env.DB!.prepare(`DELETE FROM ${t}`).run();
 });
 afterEach(() => vi.restoreAllMocks());
 

@@ -21,7 +21,7 @@ describe("S0.4 міграція 0001", () => {
   it("0.4.a: users і heartbeat зі спеки; повторний прогін міграцій без помилки; таблиці Фази 0 на місці", async () => {
     expect(await names("SELECT name FROM pragma_table_info('users') ORDER BY cid")).toEqual([
       "id", "tg_id", "tz", "quiet_from", "quiet_to", "morning_at", "evening_at", "weekly_dow",
-      "pause_until", "greet_variant_idx", "soon_variant_idx", "created_at", "last_seen_at",
+      "pause_until", "greet_variant_idx", "soon_variant_idx", "created_at", "last_seen_at", "today_variant_idx", // 0003: ALTER TABLE ADD COLUMN — у кінці
     ]);
     expect(await names("SELECT name FROM pragma_table_info('heartbeat') ORDER BY cid")).toEqual([
       "key", "last_run_at", "last_ping_ok_at",
@@ -31,9 +31,8 @@ describe("S0.4 міграція 0001", () => {
     const tables = await names(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations' ORDER BY name",
     );
-    // з міграції 0002 з'явились таблиці Фази 1 (їх склад перевіряє items.test.ts, 1.1.a); без points_ledger — це крок 1.5
-    expect(tables).toEqual(expect.arrayContaining(["heartbeat", "users"]));
-    expect(tables).not.toContain("points_ledger");
+    // з міграцій 0002–0003 з'явились таблиці Фази 1 (їх склад перевіряє items.test.ts, 1.1.a)
+    expect(tables).toEqual(expect.arrayContaining(["heartbeat", "users", "points_ledger"]));
   });
 
   it("0.4.b: CHECK-и й UNIQUE відхиляють сміття", async () => {

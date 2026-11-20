@@ -5,6 +5,7 @@ import { aiConfig, parseAllowlist } from "./config";
 import { createAiClient, type AiClient } from "./ai/client";
 import { handleCallback, handleText, handleVoice, type CaptureDeps } from "./capture";
 import { createStt, type Stt } from "./ai/stt";
+import { handleExport, handleToday } from "./commands";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
 import type { AppEnv } from "./env";
@@ -37,6 +38,8 @@ function botInfoFor(token: string): UserFromGetMe {
 }
 
 const START_RE = /^\/start(@\w+)?(\s|$)/;
+const TODAY_RE = /^\/today(@\w+)?(\s|$)/;
+const EXPORT_RE = /^\/export(@\w+)?(\s|$)/;
 const COMMAND_RE = /^\/\w+(@\w+)?(\s|$)/;
 
 export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps): Promise<void> {
@@ -88,6 +91,10 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       await handleText(ctx, captureDeps(user), "forward");
     } else if (START_RE.test(text)) {
       await ctx.reply(await nextVariant(user, "greet", GREET_POOL, deps, db));
+    } else if (TODAY_RE.test(text)) {
+      await handleToday(ctx, captureDeps(user)); // без ШІ й без захоплення (S1.10)
+    } else if (EXPORT_RE.test(text)) {
+      await handleExport(ctx, captureDeps(user)); // без ШІ (S1.11.e)
     } else if (COMMAND_RE.test(text)) {
       // Команди (/today, /foo…) — не захоплення: без запису й без ШІ (S1.4.f).
       await ctx.reply(await nextVariant(user, "soon", SOON_POOL, deps, db));
