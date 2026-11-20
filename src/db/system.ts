@@ -1,8 +1,11 @@
 import { inQuietHours, minutesOfDay } from "../time";
 import { CAPTURE_COLUMNS, LEASE_MS, type Capture } from "./captures";
+import { LEASE_MS as REMINDER_LEASE_MS, type PlanItem } from "../reminders/plan";
 import { d1Of, type Db } from "./index";
+import { REMINDER_COLUMNS, type Reminder } from "./reminders";
 
-// Виняток №2 (спека 0.4.d): функції над таблицями без власника: серце cron (Фаза 0) і cron-підбір pending (S1.5).
+// Виняток №2 (спека 0.4.d): функції над таблицями без власника: серце cron (Фаза 0), cron-підбір pending (S1.5),
+// планувальник і оренда нагадувань (Фаза 2, НФ-3).
 export interface HeartbeatRow {
   last_run_at: number;
   last_ping_ok_at: number | null;
@@ -69,4 +72,50 @@ export async function claimDuePendingCaptures(db: Db, now: number, limit: number
     if (row !== null) claimed.push(row);
   }
   return claimed;
+}
+
+// ── Фаза 2: черга нагадувань (S2.1, S2.3) ───────────────────────────────────────────────────────────────
+
+export interface UnplannedItem extends PlanItem {
+  id: number;
+  user_id: number;
+  tz: string;
+  morning_at: number;
+}
+
+// Вибірка планувальника по ВСІХ користувачах (S2.1): відкриті записи з датою, яких планувальник ще не опрацював.
+// `ORDER BY id DESC`: нові записи першими — «мертві» старі не витісняють їх із LIMIT (2.1.i).
+export async function listUnplannedItems(db: Db, limit: number): Promise<UnplannedItem[]> {
+  const res = await d1Of(db)
+    .prepare(
+      `SELECT i.id AS id, i.user_id AS user_id, i.kind AS kind, i.due_at AS due_at, i.all_day AS all_day,
+              i.priority AS priority, i.status AS status, i.travel_min AS travel_min, u.tz AS tz, u.morning_at AS morning_at
+       FROM items i JOIN users u ON u.id = i.user_id
+       WHERE i.status = 'open' AND i.due_at IS NOT NULL AND i.planned_at IS NULL
+       ORDER BY i.id DESC LIMIT ?1`,
+    )
+    .bind(limit)
+    .all<UnplannedItem>();
+  return res.results;
+}
+
+// Оренда рядків до відправки (S2.3 крок 3; «claim = sent» спека відкинула: збій між claim і відправкою губив би
+// нагадування). ОДИН `UPDATE … RETURNING`: `pending` з `fire_at ≤ now`, чия оренда вільна, отримують
+// `lease_until = now + LEASE_MS`; статус лишається `pending` — рядок закриває відправка (2.2). Оператор атомарний
+// (D1 виконує запити до бази послідовно), тож два паралельні прогони не візьмуть той самий рядок
+// (перевірено живцем на D1 preview — «Рішення» 2.1). `excludeUserIds` — користувачі в режимі тиші (S2.9).
+export async function claimDueReminders(db: Db, now: number, limit: number, excludeUserIds: number[] = []): Promise<Reminder[]> {
+  const res = await d1Of(db)
+    .prepare(
+      `UPDATE reminders SET lease_until = ?4
+       WHERE id IN (SELECT id FROM reminders
+                    WHERE status = 'pending' AND fire_at <= ?1 AND (lease_until IS NULL OR lease_until <= ?1)
+                      AND user_id NOT IN (SELECT value FROM json_each(?3))
+                    ORDER BY fire_at, id LIMIT ?2)
+         AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?1)
+       RETURNING ${REMINDER_COLUMNS}`,
+    )
+    .bind(now, limit, JSON.stringify(excludeUserIds), now + REMINDER_LEASE_MS)
+    .all<Reminder>();
+  return res.results.sort((a, b) => a.fire_at - b.fire_at || a.id - b.id);
 }

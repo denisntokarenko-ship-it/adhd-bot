@@ -30,14 +30,14 @@ describe("S1.1 міграція 0002", () => {
     const tables = await names(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations' AND name NOT LIKE 'items_fts_%' ORDER BY name",
     );
-    expect(tables).toEqual(["ai_calls", "capture_fixes", "captures", "heartbeat", "items", "items_fts", "points_ledger", "users"]);
+    expect(tables).toEqual(["ai_calls", "capture_fixes", "captures", "heartbeat", "items", "items_fts", "points_ledger", "reminders", "users"]); // reminders — 0004 (2.1)
     const indexes = await names("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name");
-    expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_user_status_due", "ix_ledger_user"]);
+    expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_status_due", "ix_items_user_status_due", "ix_ledger_user", "ix_rem_due", "ix_rem_item", "ix_rem_user_sent"]);
     const triggers = await names("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name");
     expect(triggers).toEqual(["items_fts_ad", "items_fts_ai", "items_fts_au", "tg_captures_not_fix", "tg_fixes_not_capture"]);
     expect(await names("SELECT name FROM pragma_table_info('items') ORDER BY cid")).toEqual([
       "id", "user_id", "capture_id", "kind", "title", "body", "raw_text", "source", "due_at", "all_day",
-      "priority", "status", "travel_min", "created_at", "done_at", "snooze_count",
+      "priority", "status", "travel_min", "created_at", "done_at", "snooze_count", "travel_asked_at", "planned_at", // 0004
     ]);
     const migrations = (env as unknown as { TEST_MIGRATIONS: D1Migration[] }).TEST_MIGRATIONS;
     await expect(applyD1Migrations(DB, migrations)).resolves.toBeUndefined();

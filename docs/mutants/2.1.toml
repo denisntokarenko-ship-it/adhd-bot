@@ -1,0 +1,86 @@
+test = "npx vitest run --project workers --reporter=dot test/worker/reminders.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/reminders/plan.ts"
+old = '''if (row.attempt < row.max_attempts) {'''
+new = '''if (row.attempt <= row.max_attempts) {'''
+why = "attempt < max → ≤ : після 4-ї спроби з'являється 5-та -> червоніє «рівно 4 спроби»"
+match = "рівно 4 спроби"
+test = "npx vitest run --project node --reporter=dot test/node/reminders-plan.test.ts"
+
+[[mutant]]
+id = "M2"
+file = "src/db/reminders.ts"
+old = '''       ON CONFLICT DO NOTHING`,'''
+new = '''`,'''
+why = "без ON CONFLICT DO NOTHING повторна постановка того самого кореня падає на ux_rem_root -> червоніє тест ідемпотентності"
+match = "ідемпотентність"
+
+[[mutant]]
+id = "M3"
+file = "src/db/system.ts"
+old = '''UPDATE reminders SET lease_until = ?4'''
+new = '''UPDATE reminders SET lease_until = lease_until + 0 * ?4'''
+why = "claimDue не ставить оренду (адаптація M3 «без зміни статусу» до lease, спека S2.3): обидва паралельні прогони беруть ті самі рядки -> червоніє «два claimDue паралельно»"
+match = "два claimDue паралельно"
+
+[[mutant]]
+id = "M4"
+file = "src/reminders/plan.ts"
+old = '''const tz = user.tz;'''
+new = '''const tz = "UTC";'''
+why = "shiftForQuiet рахує тишу за UTC: 07:59 Київ (05:59Z) зсувається на 08:00Z = 10:00 Київ -> червоніє «тиха ніч»"
+match = "тиха ніч"
+test = "npx vitest run --project node --reporter=dot test/node/reminders-plan.test.ts"
+
+[[mutant]]
+id = "M5"
+file = "src/db/system.ts"
+old = '''ORDER BY i.id DESC LIMIT ?1'''
+new = '''ORDER BY i.id LIMIT ?1'''
+why = "вибірка планувальника від старих до нових: 50 «мертвих» витісняють новий із LIMIT -> червоніє 2.1.i"
+match = "2\\.1\\.i"
+
+[[mutant]]
+id = "M6"
+file = "src/db/system.ts"
+old = '''AND i.planned_at IS NULL'''
+new = ''''''
+why = "вибірка без planned_at: опрацьовані записи повертаються щотику -> червоніє 2.1.i («наступні тики їх не повертають»)"
+match = "2\\.1\\.i"
+
+[[mutant]]
+id = "M7"
+file = "src/db/reminders.ts"
+old = '''r.item_id = i.id AND r.kind = ?3 AND r.parent_id IS NULL'''
+new = '''r.item_id = i.id AND r.parent_id IS NULL'''
+why = "захист «є будь-який корінь запису» замість (item, kind): leave_now від відповіді про дорогу глушить eve_before -> червоніє 2.1.j"
+match = "2\\.1\\.j"
+
+[[mutant]]
+id = "M8"
+file = "migrations/0004_reminders.sql"
+old = '''WHERE parent_id IS NULL AND status <> 'cancelled';'''
+new = '''WHERE parent_id IS NULL;'''
+why = "ux_rem_root без status <> 'cancelled': скасований корінь блокує перепланування в ту саму мить -> червоніє S2.7.g"
+match = "скасований корінь не блокує"
+
+[[mutant]]
+id = "M9"
+file = "src/reminders/plan.ts"
+old = '''if (eventDueAt !== null && fireAt > eventDueAt) return null;'''
+new = '''if (eventDueAt !== null && fireAt > eventDueAt + 3_600_000) return null;'''
+why = "повтор «час виходити» після початку події не відсікається -> 4 спроби замість 3 -> червоніє 2.2.e"
+match = "2\\.2\\.e"
+test = "npx vitest run --project node --reporter=dot test/node/reminders-plan.test.ts"
+
+[[mutant]]
+id = "M10"
+file = "src/reminders/plan.ts"
+old = '''if (eve > now + EVE_MIN_LEAD_MS) rows.push'''
+new = '''if (eve > now - 86_400_000) rows.push'''
+why = "eve_before для пізньої події (20:00 напередодні вже позаду) створюється -> червоніє 2.7.d"
+match = "2\\.7\\.d"
+test = "npx vitest run --project node --reporter=dot test/node/reminders-plan.test.ts"
