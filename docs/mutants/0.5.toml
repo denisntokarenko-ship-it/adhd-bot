@@ -1,0 +1,55 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/scheduled.ts"
+old = '''  const db = openDb(env);
+  try {
+    await heartbeat(db, KEY, clock.now());
+  } catch (err) {
+    console.error("cron: heartbeat write failed", err instanceof Error ? err.name : "unknown");
+    throw err;
+  }
+  await pingMonitor(env, clock);'''
+new = '''  const db = openDb(env);
+  await pingMonitor(env, clock);
+  await heartbeat(db, KEY, clock.now());
+  throw new Error("ping boom");'''
+why = "пінг до запису серця + виняток -> червоніє 0.3.d (fetch не має викликатись) і «пінг падає»"
+match = "0.3"
+
+[[mutant]]
+id = "M2"
+file = "src/health.ts"
+old = '''export const STALE_AFTER_MS = 180_000;'''
+new = '''export const STALE_AFTER_MS = 1_800_000;'''
+why = "поріг stale 180 с -> 1800 с -> червоніє тест stale (0.2.c / setSystemTime)"
+match = "stale"
+
+[[mutant]]
+id = "M3"
+file = "src/scheduled.ts"
+old = '''    if (!res.ok) {
+      console.error("monitor: ping failed, status", res.status);
+      return;
+    }'''
+new = ''''''
+why = "відповідь 500 рахується успіхом -> last_ping_ok_at оновлюється -> червоніє 0.3.c"
+match = "0.3.c"
+
+[[mutant]]
+id = "M4"
+file = "src/db/system.ts"
+old = '''ON CONFLICT(key) DO UPDATE SET last_run_at = excluded.last_run_at'''
+new = ''''''
+why = "upsert -> звичайний insert -> другий прогін падає -> червоніє 0.3.b"
+match = "0.3.b"
+
+[[mutant]]
+id = "M5"
+file = "src/health.ts"
+old = '''env.ENV === "production" && (env.MONITOR_PING_URL ?? "").trim() === ""'''
+new = '''false'''
+why = "prod без пінгу виглядає «ok» -> червоніє 0.3.e"
+match = "0.3.e"
