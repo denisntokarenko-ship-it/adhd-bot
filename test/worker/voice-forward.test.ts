@@ -233,7 +233,7 @@ describe("S1.7 голосове", () => {
     });
     expect(await stt.transcribe(new Uint8Array([79, 103, 103, 83]).buffer)).toBe("привіт");
     expect(calls).toEqual([
-      { model: "@cf/openai/whisper-large-v3-turbo", input: { audio: "T2dnUw==", language: "uk", task: "transcribe" } },
+      { model: "@cf/openai/whisper-large-v3-turbo", input: { audio: "T2dnUw==", language: "uk", task: "transcribe", vad_filter: true } },
     ]);
     expect([STT_MODEL, STT_LANGUAGE]).toEqual(["@cf/openai/whisper-large-v3-turbo", "uk"]);
     expect(await count("ai_calls")).toBe(0);

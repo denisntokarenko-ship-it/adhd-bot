@@ -7,6 +7,7 @@ export const STT_TIMEOUT_MS = 20_000;
 export const MAX_VOICE_SECONDS = 300; // припущення (open-questions.md): довше — «розріж на частини»
 export const MIN_TEXT_CHARS = 2;
 
+// vad_filter: без нього Whisper на тиші/шумі видає «Дякую за перегляд!» (перевірено живцем) — фантомний запис.
 // Те, що потрібно від Workers AI: один виклик моделі. У тестах — мок.
 export interface Stt {
   transcribe(audio: ArrayBuffer): Promise<string>;
@@ -32,7 +33,7 @@ export function createStt(ai: WorkersAiBinding, timeoutMs = STT_TIMEOUT_MS): Stt
       });
       try {
         const out = (await Promise.race([
-          ai.run(STT_MODEL, { audio: toBase64(audio), language: STT_LANGUAGE, task: "transcribe" }),
+          ai.run(STT_MODEL, { audio: toBase64(audio), language: STT_LANGUAGE, task: "transcribe", vad_filter: true }),
           limit,
         ])) as { text?: unknown } | null;
         return typeof out?.text === "string" ? out.text.trim() : "";
