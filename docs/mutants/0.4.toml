@@ -1,0 +1,62 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/app.ts"
+old = '''if (given === null || !(await secretsEqual(given, expected))) return text(401, "");'''
+new = '''if (false) return text(401, "");'''
+why = "прибрати перевірку секрету вебхука -> має червоніти тест 401 (0.1.e)"
+
+[[mutant]]
+id = "M2"
+file = "src/db/users.ts"
+old = '''ON CONFLICT(tg_id) DO UPDATE SET last_seen_at = excluded.last_seen_at'''
+new = ''''''
+why = "upsert -> звичайний insert -> має червоніти тест «/start двічі» (0.1.b)"
+
+[[mutant]]
+id = "M3"
+file = "src/bot.ts"
+old = '''const db = openDb(env);'''
+new = '''const db = openDb(env); const leak = env.DB;'''
+why = "env.DB у src/bot.ts -> має червоніти тест-охоронець (0.4.c)"
+match = "0.4.c"
+
+[[mutant]]
+id = "M4"
+file = "src/app.ts"
+old = '''if (expected === undefined || expected.trim() === "") return text(401, "");'''
+new = ''''''
+why = "прибрати fail-closed для порожнього WEBHOOK_SECRET -> 0.1.g"
+
+[[mutant]]
+id = "M5"
+file = "src/texts.ts"
+old = '''if (i !== last) candidates.push(i);'''
+new = '''candidates.push(i);'''
+why = "варіант може повторитись підряд -> 0.1.d / pickVariant"
+
+[[mutant]]
+id = "M6"
+file = "src/health.ts"
+old = '''ageMs > STALE_AFTER_MS'''
+new = '''ageMs >= STALE_AFTER_MS'''
+why = "межа stale зсунута на 1 мс -> 0.2.c"
+
+[[mutant]]
+id = "M7"
+file = "src/bot.ts"
+old = '''    if (ctx.chat.type !== "private") return;
+    const fromId = ctx.from?.id;'''
+new = '''    const fromId = ctx.from?.id;'''
+why = "відповідати в групі -> 0.6.d"
+
+[[mutant]]
+id = "M8"
+file = "src/bot.ts"
+old = '''if (fromId === undefined || allowlist === null || !allowlist.has(fromId)) {
+      await ctx.reply(PRIVATE_BOT_TEXT);'''
+new = '''if (fromId === undefined || (allowlist !== null && !allowlist.has(fromId))) {
+      await ctx.reply(PRIVATE_BOT_TEXT);'''
+why = "порожній/зіпсований allowlist пускає всіх (fail-open) -> 0.6.b/0.6.c"

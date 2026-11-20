@@ -11,7 +11,7 @@
 | 0.1 | Каркас репозиторію і процес | Opus 5.5 | high | `main` (перший коміт) | ✅ | — |
 | 0.2 | Специфікація Фаз 0–1 · 🔒 | Opus 5.5 | high | `phase-0/02-spec` | ✅ | ✅ |
 | 0.3 | Інструменти й CI | Sonnet 5.5 | medium | `phase-0/03-ci` | ✅ | — |
-| 0.4 | Worker, оточення preview/prod і шар даних · 👤 · 🔒 | Opus 5.5 | high | `phase-0/04-worker-db` | ⬜ | ⬜ |
+| 0.4 | Worker, оточення preview/prod і шар даних · 👤 · 🔒 | Opus 5.5 | high | `phase-0/04-worker-db` | 🟡 | ⬜ |
 | 0.5 | Cron-серце й зовнішній монітор · 👤 | Opus 5.5 | high | `phase-0/05-heartbeat` | ⬜ | — |
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | `review/phase-0` | ⬜ | ⬜ |
 | 1.1 | Схема записів, FTS5 і шар даних · 🔒 | Opus 5.5 | high | `phase-1/01-items-data` | ⬜ | ⬜ |
@@ -58,6 +58,7 @@
 
 ## Борг
 
+- Cron `* * * * *` оголошено в `wrangler.toml` обох env (спека 0.5.b), але обробника `scheduled()` ще немає (крок 0.5): на preview Cloudflare щохвилини логуватиме відсутність handler-а — очікувано до 0.5. (0.4)
 - `scripts/mutate.py` (S0.8.b, правило 9) у репозиторії ще немає — створити до першої мутаційної перевірки (0.4). (0.3)
 
 ## Рішення
@@ -68,7 +69,11 @@
 - **2026-11-20** Рев'ю 0.2 (ПРИЙНЯТИ ПІСЛЯ ВИПРАВЛЕНЬ) закрито: Б1–Б2, В1–В6, Д1–Д6 виправлено в спеці, рядки рішень — `docs/spec/decisions.md`; «Борг» не поповнено. (0.2)
 - **2026-11-20** Тест Worker+D1: `@cloudflare/vitest-plugin` ^1.8 (замінив `@cloudflare/vitest-pool-workers` ≤0.23; peer `vitest ^4.1 || ^5`), конфіг `cloudflareTest({ wrangler: { configPath } })`, міграції — `readD1Migrations` + `applyD1Migrations` у `setupFiles`. Потрібен wrangler-конфіг → підключає 0.4; у 0.3 — звичайний Node-раннер. https://developers.cloudflare.com/workers/testing/vitest-integration/ (0.3)
 - **2026-11-20** Версії: Node 24 у CI (LTS Krypton, = локальна; v26 теж LTS), `actions/checkout@v7`, `actions/setup-node@v7`, vitest 5.1, TypeScript 7.0 (`tsc` працює). https://nodejs.org/en/about/previous-releases (0.3)
+- **2026-11-20** Тест Worker+D1 (0.4): два проєкти Vitest — `node` (скани файлів, `wrangler.toml` через `smol-toml`, тексти) і `workers` (`@cloudflare/vitest-plugin` 1.8.5, `environment: "preview"`, міграції в `setupFiles`). Версії живцем: wrangler 4.165.0, grammy 1.46.0, compatibility_date `2026-11-18` (= workerd 1.20261118). https://developers.cloudflare.com/workers/testing/vitest-integration/ (0.4)
+- **2026-11-20** Імена секретів — за спекою (`BOT_TOKEN`, `WEBHOOK_SECRET`, `ALLOWED_TG_IDS`), а не `TELEGRAM_*` з тексту промпту; D1 — `src/db/users.ts` (`ensureUser`, `getById`, `setVariantIdx`) і `src/db/system.ts` (читання серця, `queueSize`), а не `heartbeat.ts`; запис серця — крок 0.5. Функції БД беруть непрозорий `Db` (`openDb(env)`) другим параметром, `userId` — першим. (0.4)
+- **2026-11-20** Не-текстові update-и й `edited_message` ігноруються повністю (без `ensureUser`): 0.7.c «без запису» важить більше за «`ensureUser` на кожен update» з 0.1.c. grammY: `botInfo` підставлено з токена (без `getMe` на холодному старті), `handleUpdate` викликаємо самі — `webhookCallback` не потрібен, бо 401/200 повертаємо власною логікою. (0.4)
+- **2026-11-20** Ресурси prod (D1, бот-токен) у Фазі 0 не створюються (спека 0.5.f, `open-questions.md`): у `wrangler.toml` `production` лише оголошено з плейсхолдером `REPLACE_WITH_PROD_D1_ID`; створює 3.3. (0.4)
 
 ## Нотатка для наступного кроку
 
-0.3 (CI): тримай разом з `npm run check:docs` = `bash scripts/check-docs.sh`; `scripts/mutate.py` відмовляється працювати з брудним деревом (S0.8). Спека Фаз 0–1 готова: `docs/spec/phase-0.md`, `phase-1.md` (історії `S0.x`/`S1.x`, критерії `0.1.a`…). `phase-1.md` ≈ 37,9 КБ з 40 — нові правила Фази 1 пиши в `decisions.md`, а не в зріз. Після рев'ю 0.2 у спеці є `capture_fixes` + тригери (S1.6), `users.*_variant_idx`, перевірка `chat.type` (0.6.d) і fail-closed `WEBHOOK_SECRET` (0.1.g): 0.4/1.1 реалізують їх за DDL зі спеки.
+0.4 (код готовий, 👤-частина чекає): `src/db/system.ts` має лише `readHeartbeat` — 0.5 додає запис серця (`heartbeat(db, ...)`, `last_ping_ok_at`), `scheduled()` у `src/index.ts` і `MONITOR_PING_URL`. `/health` вже читає ключ `cron` (0.2.f «monitor:missing» — теж 0.5). Тести: `npx vitest run --reporter=dot`; `test/worker/helpers.ts` — `mockTelegram`, `send`, `baseEnv`. Вебхук preview ставить `node scripts/set-webhook.mjs <url>/webhook` (перевіряє `getWebhookInfo`).

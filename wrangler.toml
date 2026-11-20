@@ -1,0 +1,37 @@
+# РДУГ-бот: два повністю окремі оточення (правила 7 і 8 CLAUDE.md).
+# Верхній рівень навмисно без D1 і без cron: `wrangler d1 migrations apply` без `--env`
+# не має куди йти й не потрапить у prod. Тригери між env не успадковуються — оголошені в кожному.
+# Секрети (BOT_TOKEN, WEBHOOK_SECRET, ALLOWED_TG_IDS, MONITOR_PING_URL) тут не живуть: `wrangler secret put … --env …`.
+# GIT_SHA передає деплой: `wrangler deploy --env preview --var GIT_SHA:$(git rev-parse HEAD)`.
+name = "adhd-bot"
+main = "src/index.ts"
+compatibility_date = "2026-11-18" # остання дата, яку підтримує workerd 2026-11-18 з wrangler 4.165
+account_id = "REPLACE_WITH_ACCOUNT_ID" # 👤 крок 0.4, п. 2: `npx wrangler whoami`
+workers_dev = false
+
+[env.preview]
+name = "adhd-bot-preview"
+workers_dev = true
+vars = { ENV = "preview" }
+
+[env.preview.triggers]
+crons = ["* * * * *"]
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "adhd-preview"
+database_id = "REPLACE_WITH_PREVIEW_D1_ID" # 👤 `npx wrangler d1 create adhd-preview`
+migrations_dir = "migrations"
+
+[env.production]
+name = "adhd-bot-prod"
+vars = { ENV = "production" }
+
+[env.production.triggers]
+crons = ["* * * * *"]
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "adhd-prod"
+database_id = "REPLACE_WITH_PROD_D1_ID" # ресурси prod створює крок 3.3 (спека 0.5.f), не 0.4
+migrations_dir = "migrations"
