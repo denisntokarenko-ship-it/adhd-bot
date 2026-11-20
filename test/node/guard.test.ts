@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportedFunctions, findViolations, readSources, userIdViolations, type SourceFile } from "./guard-lib";
+import { TOKEN_RE, exportedFunctions, findViolations, readSources, scannableTextFiles, userIdViolations, type SourceFile } from "./guard-lib";
 
 const files = readSources();
 const file = (p: string, text: string): SourceFile => ({ path: p, text });
@@ -38,5 +38,51 @@ describe("S0.4 огорожа шару даних", () => {
     expect(findViolations([file("src/x.ts", "const d = new Date();")])).toHaveLength(1);
     expect(findViolations([file("src/x.ts", "const d = new Date(ms);")])).toEqual([]);
     expect(findViolations([file("src/clock.ts", "now: () => Date.now()")])).toEqual([]);
+  });
+  it("В1: обхід через деструктуризацію, env[\"DB\"], db.d1 і d1Of поза src/db/ — червоний", () => {
+    for (const code of [
+      "const { DB } = env; void DB;",
+      'const d = env["DB"];',
+      'if (update.update_id < 0) await db.d1.exec("DELETE FROM users");',
+      "const raw = d1Of(db);",
+    ]) {
+      expect(findViolations([file("src/bot.ts", code)]), code).not.toEqual([]);
+      expect(findViolations([file("src/db/x.ts", code)]), `у src/db/: ${code}`).toEqual([]);
+    }
+  });
+
+  it("В2: експорт-стрілка без userId червоний, також у index.ts; openDb і d1Of — явні винятки", () => {
+    const arrow = file("src/db/users.ts", "export const listAll = async (db: Db) => db.d1.prepare('SELECT 1').all();");
+    expect(userIdViolations([arrow])).toEqual(["src/db/users.ts: listAll(db)"]);
+    for (const code of [
+      "export const a = (db: Db) => 1;",
+      "export const a = async function (db: Db) {};",
+      "export const a = db => 1;",
+      "export const a = async <T>(db: Db) => 1;",
+      "export const a: Fn = (db: Db) => 1;",
+      "export const a = ({ x }: P) => 1;",
+    ]) {
+      expect(userIdViolations([file("src/db/users.ts", code)]), code).not.toEqual([]);
+    }
+    expect(userIdViolations([file("src/db/users.ts", "export const ok = async (userId: number, db: Db) => 1;")])).toEqual([]);
+    // index.ts більше не виняток цілого файлу
+    expect(userIdViolations([file("src/db/index.ts", "export async function allUsers(db: Db) {}")])).toEqual(["src/db/index.ts: allUsers(db)"]);
+    expect(userIdViolations([file("src/db/index.ts", "export function openDb(env: E) {}\nexport function d1Of(db: Db) {}")])).toEqual([]);
+  });
+
+  it("В2: непізнаваний експорт (alias, re-export, default) — fail-closed", () => {
+    for (const code of ["export const f = other;", "export { a } from './x';", "export * from './x';", "export default function (db) {}"]) {
+      expect(userIdViolations([file("src/db/users.ts", code)]), code).not.toEqual([]);
+    }
+    // літерали, типи й інтерфейси — не функції
+    expect(userIdViolations([file("src/db/users.ts", 'export const COLS = "a, b";\nexport interface U {}\nexport type K = "a";')])).toEqual([]);
+  });
+
+  it("В5: токеноподібний рядок шукається в усіх трекнутих текстових файлах, крім lock і .d.ts", () => {
+    const picked = scannableTextFiles(["scripts/set-webhook.mjs", "x.py", "Dockerfile", ".github/workflows/ci.yml", "package-lock.json", "worker-configuration.d.ts", "src/a.ts"]);
+    expect(picked).toEqual(["scripts/set-webhook.mjs", "x.py", "Dockerfile", ".github/workflows/ci.yml", "src/a.ts"]);
+    const fake = `// default: ${"1".repeat(9)}:${"A".repeat(35)}`; // зібрано в коді: у самому файлі токена немає
+    expect(TOKEN_RE.test(fake)).toBe(true);
+    expect(TOKEN_RE.test("123456789:TESTTOKEN")).toBe(false);
   });
 });

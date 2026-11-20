@@ -156,6 +156,46 @@ describe("S0.6 allowlist і приватний чат", () => {
   });
 });
 
+describe("S0.6 callback_query: allowlist і приватний чат (рев'ю 0.4 В3)", () => {
+  const callback = (from: number, chat?: { id: number; type: string }) => ({
+    update_id: 50,
+    callback_query: {
+      id: "cb",
+      chat_instance: "x",
+      from: { id: from, is_bot: false, first_name: "T" },
+      data: "noop",
+      ...(chat ? { message: { message_id: 1, date: 0, chat } } : {}),
+    },
+  });
+
+  it("0.6.a: callback від чужого — без рядка в users, лише статична відповідь на callback", async () => {
+    const tg = mockTelegram();
+    expect((await send(callback(999, { id: 999, type: "private" }))).status).toBe(200);
+    expect(await userRows()).toHaveLength(0);
+    expect(tg.calls.map((c) => c.method)).toEqual(["answerCallbackQuery"]);
+    expect(tg.calls[0]!.body.text).toBe(PRIVATE_BOT_TEXT);
+  });
+
+  it("0.6.d: callback з групи (навіть від власника) і callback без message — тиша, без запису", async () => {
+    const tg = mockTelegram();
+    for (const upd of [callback(111, { id: -100, type: "group" }), callback(111, { id: -100, type: "supergroup" }), callback(111)]) {
+      expect((await send(upd)).status).toBe(200);
+    }
+    expect(tg.calls).toHaveLength(0);
+    expect(await userRows()).toHaveLength(0);
+  });
+
+  it("НФ-9 (Д1): D1 кидає на upsert — callback усе одно отримує answerCallbackQuery, вебхук віддає 200", async () => {
+    const tg = mockTelegram();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const brokenDb = { prepare: () => { throw new Error("D1 down"); } };
+    const res = await send(callback(111, { id: 111, type: "private" }), baseEnv({ DB: brokenDb }));
+    expect(res.status).toBe(200);
+    expect(tg.calls.map((c) => c.method)).toEqual(["answerCallbackQuery"]);
+    expect(err).toHaveBeenCalledWith("update failed", expect.any(String));
+  });
+});
+
 describe("S0.7 стійкість вебхука", () => {
   it("0.7.a/b: обробник кидає — 200 і помилка в лозі (не залежить від bot.catch)", async () => {
     mockTelegram({ failSend: true });

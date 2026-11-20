@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "smol-toml";
 import { describe, expect, it } from "vitest";
-import { ROOT } from "./guard-lib";
+import { ROOT, TOKEN_RE, scannableTextFiles } from "./guard-lib";
 
 type Cfg = {
   name?: string;
@@ -54,11 +54,13 @@ describe("0.5.c секрети не в репозиторії", () => {
     expect(tracked.filter((f) => /(\.env|\.dev\.vars|secret)/i.test(path.basename(f)))).toEqual([]);
   });
 
-  it("жодного рядка, схожого на токен бота, у трекнутих текстових файлах", () => {
-    const re = /\d{8,}:[\w-]{30,}/;
-    const hits = tracked
-      .filter((f) => /\.(ts|toml|json|md|sql|sh|yml|yaml)$/.test(f) && !f.endsWith("package-lock.json"))
-      .filter((f) => re.test(readFileSync(path.join(ROOT, f), "utf8")));
+  it("жодного рядка, схожого на токен бота, у трекнутих текстових файлах (усі типи, крім lock і .d.ts)", () => {
+    const files = scannableTextFiles(tracked);
+    expect(files).toContain("scripts/set-webhook.mjs"); // скрипт із BOT_TOKEN — у скані
+    const hits = files.filter((f) => {
+      const buf = readFileSync(path.join(ROOT, f));
+      return !buf.includes(0) && TOKEN_RE.test(buf.toString("utf8")); // файли з нульовим байтом — бінарні
+    });
     expect(hits).toEqual([]);
   });
 });

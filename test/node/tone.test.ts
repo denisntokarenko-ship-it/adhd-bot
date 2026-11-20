@@ -1,26 +1,52 @@
 import { describe, expect, it } from "vitest";
 import { parseAllowlist } from "../../src/config";
-import { GREET_POOL, PRIVATE_BOT_TEXT, SOON_POOL, pickVariant } from "../../src/texts";
+import * as texts from "../../src/texts";
+import { pickVariant } from "../../src/texts";
 
 // НФ-4: слова-звинувачення, яких у репліках бота немає. Список ростиме разом з пулами.
 const FORBIDDEN = ["прострочен", "пропустив", "пропустила", "забув", "забула", "знову", "ніколи не", "провал", "не зробив", "не виконав", "❌", "🔴"];
 
-const pools: Record<string, readonly string[]> = { GREET_POOL, SOON_POOL, PRIVATE: [PRIVATE_BOT_TEXT] };
+// Пули збираються з усіх експортів src/texts.ts автоматично: новий пул не можна «забути» вписати (НФ-4).
+function collectPools(mod: Record<string, unknown>): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {};
+  for (const [name, v] of Object.entries(mod)) {
+    if (typeof v === "string") out[name] = [v];
+    else if (Array.isArray(v) && v.every((x) => typeof x === "string")) out[name] = v as string[];
+    else if (typeof v !== "function") throw new Error(`НФ-4: експорт ${name} має невідомий тип — тон не перевіряється`);
+  }
+  return out;
+}
+
+function forbiddenHits(pools: Record<string, readonly string[]>): string[] {
+  const hits: string[] = [];
+  for (const [name, pool] of Object.entries(pools)) {
+    for (const text of pool) for (const w of FORBIDDEN) if (text.toLowerCase().includes(w)) hits.push(`${name}: «${text}» містить «${w}»`);
+  }
+  return hits;
+}
+
+const pools = collectPools(texts);
 
 describe("НФ-4 тон текстів", () => {
-  it("кожен повторюваний пул має ≥ 3 варіантів без дублів", () => {
-    for (const pool of [GREET_POOL, SOON_POOL]) {
+  it("збирач бачить усі пули src/texts.ts, а новий пул з забороненими словами — червоний", () => {
+    expect(Object.keys(pools)).toEqual(expect.arrayContaining(["GREET_POOL", "SOON_POOL", "PRIVATE_BOT_TEXT"]));
+    const evil = collectPools({ ...texts, RECEIPT_POOL: ["Ти знову забув", "Прострочено", "Провал"] });
+    const hits = forbiddenHits(evil).join("\n");
+    for (const t of ["Ти знову забув", "Прострочено", "Провал"]) expect(hits).toContain(`«${t}»`);
+    expect(() => collectPools({ X: 5 })).toThrow(/невідомий тип/);
+  });
+
+  it("кожен повторюваний пул (*_POOL) має ≥ 3 варіантів без дублів", () => {
+    const repeating = Object.entries(pools).filter(([name]) => name.endsWith("_POOL"));
+    expect(repeating.length).toBeGreaterThanOrEqual(2);
+    for (const [, pool] of repeating) {
       expect(pool.length).toBeGreaterThanOrEqual(3);
       expect(new Set(pool).size).toBe(pool.length);
     }
   });
 
   it("жодного забороненого слова в жодному пулі", () => {
-    for (const [name, pool] of Object.entries(pools)) {
-      for (const text of pool) {
-        for (const w of FORBIDDEN) expect(text.toLowerCase(), `${name}: «${text}» містить «${w}»`).not.toContain(w);
-      }
-    }
+    expect(forbiddenHits(pools)).toEqual([]);
   });
 
   it("до 2 емодзі й до 4 рядків на повідомлення", () => {

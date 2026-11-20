@@ -1,4 +1,4 @@
-import type { Db } from "./index";
+import { d1Of, type Db } from "./index";
 
 // Виняток №2 (спека 0.4.d): функції над таблицями без власника. У Фазі 0 — читання серця cron.
 // Запис серця (`heartbeat`) додає крок 0.5.
@@ -8,7 +8,7 @@ export interface HeartbeatRow {
 }
 
 export async function readHeartbeat(db: Db, key: string): Promise<HeartbeatRow | null> {
-  return db.d1
+  return d1Of(db)
     .prepare("SELECT last_run_at, last_ping_ok_at FROM heartbeat WHERE key = ?1")
     .bind(key)
     .first<HeartbeatRow>();

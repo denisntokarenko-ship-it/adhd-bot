@@ -64,8 +64,12 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       await ctx.answerCallbackQuery({ text: PRIVATE_BOT_TEXT });
       return;
     }
-    await ensureUser(fromId, db, deps.clock.now());
-    await ctx.answerCallbackQuery();
+    // Помилка D1 не лишає кнопку «спінером»: відповідь іде в будь-якому разі, помилку логує app.ts (НФ-9).
+    try {
+      await ensureUser(fromId, db, deps.clock.now());
+    } finally {
+      await ctx.answerCallbackQuery();
+    }
   });
 
   await bot.handleUpdate(update);
