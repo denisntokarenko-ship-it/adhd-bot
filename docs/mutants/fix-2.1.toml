@@ -7,7 +7,7 @@ file = "src/db/reminders.ts"
 old = '''WHERE i.id = ?2 AND i.user_id = ?1 AND i.status = 'open' ${guard}'''
 new = '''WHERE i.id = ?2 AND i.user_id = ?1 ${guard}'''
 why = "вставка кореня без i.status = 'open' (мутант R3 рев'ю 2.1, вижив): запис закрили між вибіркою й batch -> нагадування про зроблене -> червоніє «В1 (рев'ю 2.1)»"
-match = "В1 \(рев'ю 2.1\)"
+match = '''В1 (рев'ю 2.1)'''
 
 [[mutant]]
 id = "D1"
@@ -15,5 +15,5 @@ file = "src/reminders/plan.ts"
 old = '''if (end <= t) end = Math.max(end + 3_600_000, t + 1);'''
 new = ''''''
 why = "кінець тиші о 03:xx у ніч осіннього переходу береться з першого входження подвійної години -> результат раніше за fireAt -> червоніє «Д1 (рев'ю 2.1)»"
-match = "Д1 \(рев'ю 2.1\)"
+match = '''Д1 (рев'ю 2.1)'''
 test = "npx vitest run --project node --reporter=dot test/node/reminders-plan.test.ts"
