@@ -456,8 +456,9 @@ describe("S1.6 «Не так»", () => {
     await send(fix, baseEnv(), d(ai.client, FRI + 2 * MIN));
     tg.calls.length = 0;
 
-    await send(fix, baseEnv(), d(ai.client, FRI + 3 * MIN));
-    await Promise.all([send(fix, baseEnv(), d(ai.client, FRI + 3 * MIN)), send(fix, baseEnv(), d(ai.client, FRI + 3 * MIN))]);
+    // 200, а не 500: тригер БД («update is a fix») — лише страховка, а 500 змусив би Telegram повторювати вічно
+    const dup = [await send(fix, baseEnv(), d(ai.client, FRI + 3 * MIN)), ...(await Promise.all([send(fix, baseEnv(), d(ai.client, FRI + 3 * MIN)), send(fix, baseEnv(), d(ai.client, FRI + 3 * MIN))]))];
+    expect(dup.map((r) => r.status)).toEqual([200, 200, 200]);
     expect(ai.requests).toHaveLength(1);
     expect(await count("captures")).toBe(1);
     expect(await count("items")).toBe(1);
