@@ -1,0 +1,98 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/bot.ts"
+old = "    if (ctx.message.forward_origin) {"
+new = "    if (false) {"
+why = "пересланий текст не розпізнається як forward -> «/today» усередині стає командою, source='text' -> червоніє «пересилання з /today»"
+match = "пересилання з «/today» усередині"
+
+[[mutant]]
+id = "M2"
+file = "src/bot.ts"
+old = 'forwarded ? "forward" : "voice"'
+new = '"voice"'
+why = "переслане голосове записується як voice -> червоніє «переслане голосове → STT, source=forward»"
+match = "переслане голосове → STT"
+
+[[mutant]]
+id = "M3"
+file = "src/capture.ts"
+old = "voice.duration > MAX_VOICE_SECONDS"
+new = "voice.duration >= MAX_VOICE_SECONDS"
+why = "межа 5 хв включно відсікає рівно 300 с -> червоніє «рівно 300 с проходить»"
+match = "довше за 5 хв"
+
+[[mutant]]
+id = "M4"
+file = "src/capture.ts"
+old = "Array.from(heard).length < MIN_TEXT_CHARS"
+new = "Array.from(heard).length < 0"
+why = "розпізнане «а» йде в Claude -> червоніє «розпізнане порожнє або < 2 символів»"
+match = "розпізнане порожнє або < 2 символів"
+
+[[mutant]]
+id = "M5"
+file = "src/capture.ts"
+old = "voice.duration <= 0"
+new = "voice.duration < 0"
+why = "голосове duration=0 іде в STT -> червоніє «duration=0 → не розчув»"
+match = "duration=0"
+
+[[mutant]]
+id = "M6"
+file = "src/capture.ts"
+old = "  if (await isKnownUpdate(d.user.id, d.db, updateId)) return; // дубль доставки — до скачування й STT"
+new = "  if (false) return;"
+why = "дубль доставки голосового знову йде в STT -> червоніє «той самий update_id двічі → один виклик STT»"
+match = "один виклик STT"
+
+[[mutant]]
+id = "M7"
+file = "src/ai/stt.ts"
+old = "language: STT_LANGUAGE"
+new = 'language: "ru"'
+why = "Whisper викликається не з language='uk' -> червоніє 1.7.f"
+match = "1.7.f"
+
+[[mutant]]
+id = "M8"
+file = "src/format.ts"
+old = "<i>${escapeHtml(clip(heard, HEARD_MAX))}</i>"
+new = "<i>${clip(heard, HEARD_MAX)}</i>"
+why = "розпізнаний текст не екранується -> «<b>» ламає HTML квитанції -> червоніє «розпізнаний текст екранується»"
+match = "розпізнаний текст екранується"
+
+[[mutant]]
+id = "M9"
+file = "src/capture.ts"
+old = "return applyFix(ctx, d, fix, text, updateId, origin.heard);"
+new = "return applyFix(ctx, d, fix, text, updateId);"
+why = "голосове-виправлення не показує розпізнане -> червоніє «голосове як виправлення»"
+match = "голосове як виправлення"
+
+[[mutant]]
+id = "M10"
+file = "src/bot.ts"
+old = '} else if (forwarded && (ctx.message.caption ?? "").trim() !== "") {'
+new = "} else if (false) {"
+why = "підпис пересланого фото ігнорується -> червоніє «пересланий підпис до фото береться»"
+match = "пересланий підпис до фото"
+
+[[mutant]]
+id = "M11"
+file = "src/db/captures.ts"
+old = "capture.raw_text === null ? VOICE_PENDING_TITLE :"
+new = "false ? VOICE_PENDING_TITLE :"
+why = "голосове без STT отримує порожній заголовок «Нотатка» замість «Голосове — розберу пізніше» -> червоніє 1.7.d"
+match = "STT впав → захоплення pending"
+
+[[mutant]]
+id = "M12"
+file = "src/capture.ts"
+old = "    if (fix !== null) return void (await ctx.reply(pick(FIX_FAILED_POOL, null, d.rand).text));\n    return captureNew(ctx, d, null,"
+new = "    return captureNew(ctx, d, null,"
+why = "збій STT під час «Не так» створює нове захоплення замість «лишив як було» -> червоніє «STT впав під час виправлення»"
+match = "STT впав під час виправлення"
