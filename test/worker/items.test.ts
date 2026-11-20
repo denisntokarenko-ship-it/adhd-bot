@@ -220,6 +220,14 @@ describe("src/db/items: життєвий цикл", () => {
   });
 });
 
+// Індекс FTS5 звіряється із таблицею items напряму: `search` робить JOIN з items, тож «привид» видаленого запису
+// в індексі через нього не видно. integrity-check з rank=1 для external content порівнює індекс із вмістом.
+async function expectIndexConsistent() {
+  await expect(DB.prepare("INSERT INTO items_fts(items_fts, rank) VALUES ('integrity-check', 1)").run()).resolves.toBeDefined();
+}
+const rawHits = async (q: string) =>
+  (await DB.prepare("SELECT rowid FROM items_fts WHERE items_fts MATCH ?").bind(q).all<{ rowid: number }>()).results.length;
+
 describe("S1.1.c FTS5", () => {
   it("«лікар» знаходить «Запис до лікаря» (префікс) і «Лікар у п'ятницю»; регістр не важливий", async () => {
     const u = await newUser(1);
@@ -273,16 +281,17 @@ describe("S1.1.c FTS5", () => {
     await update(u, db(), a.id, { dueAt: NOW + 5, priority: "important" });
     await setStatus(u, db(), a.id, "done", NOW);
     expect((await search(u, db(), "кабінет")).map((i) => i.id)).toEqual([a.id]);
-    expect((await DB.prepare("INSERT INTO items_fts(items_fts) VALUES ('integrity-check')").run()).success).toBe(true);
+    await expectIndexConsistent();
   });
 
   it("після DELETE не знаходить (і integrity-check індексу чистий)", async () => {
     const u = await newUser(1);
     const a = await create(u, db(), note("Лікар", { body: "кабінет" }), NOW);
     await DB.prepare("DELETE FROM items WHERE id = ?").bind(a.id).run();
+    expect(await rawHits('"лікар"*')).toBe(0); // самі індекс без JOIN теж порожній
     expect(await search(u, db(), "лікар")).toEqual([]);
     expect(await search(u, db(), "кабінет")).toEqual([]);
-    expect((await DB.prepare("INSERT INTO items_fts(items_fts) VALUES ('integrity-check')").run()).success).toBe(true);
+    await expectIndexConsistent();
   });
 
   it("1.1.d: ворожі запити не кидають і нічого не знаходять", async () => {
