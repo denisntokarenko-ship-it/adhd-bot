@@ -76,7 +76,7 @@
 - Планування рутин на завтра — у тому ж годинному «самовідновленні», що й дайджести (3.1).
 - Тест-межа: src/ai/ не імпортує src/db/routines.ts (перевірка імпортів у Vitest) і мок-клієнт Claude падає, якщо в будь-якому промпті трапляється назва активної рутини.
 - Тести: рутина 08:00 і 20:00 пн–пт → у суботу нічого; logAnswer двічі → один рядок; перехід на літній час не зсуває 08:00 за Києвом.
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/4.1.toml --report docs/mutants/4.1.md` (мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/4.1.toml --report docs/mutants/4.1.md` (мутуй після коміту):
 M1 — прибери days_mask з planDay → червоніє тест суботи; M2 — додай імпорт routines у src/ai/parse.ts → червоніє тест-межа; M3 — прибери UNIQUE у routine_logs → червоніє тест logAnswer.
 
 НЕ робиш: майстер і кнопки (4.2), викатку (4.3).
@@ -133,7 +133,7 @@ M1 — прибери days_mask з planDay → червоніє тест суб�
 - Нагадування рутин: med — ескалація до відповіді, habit — раз; кнопки ✅ / «пропущу» / +15 хв; missed після max — без повідомлення-докору.
 - Ранок: рядок «💊 сьогодні: 08:00, 20:00»; вечір: «прийнято N з M».
 - Тести: текст під час майстра не викликає Claude (мок падає при виклику); med без відповіді → 4 спроби → missed; «пропущу» → skipped, повтори скасовано; вечір без слів «пропустив», «не прийняв».
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/4.2.toml --report docs/mutants/4.2.md` (мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/4.2.toml --report docs/mutants/4.2.md` (мутуй після коміту):
 M1 — прибери перевірку стану майстра перед parseCapture → червоніє тест «майстер не викликає Claude»; M2 — med з max 1 → червоніє тест 4 спроб.
 - Живий прогін на preview: рутина «тест» через 2 хв → 4 повтори → missed у routine_logs.
 

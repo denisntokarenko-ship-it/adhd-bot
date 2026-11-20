@@ -31,6 +31,19 @@ describe("S0.4 огорожа шару даних", () => {
     expect(userIdViolations([file("src/db/users.ts", "export function ok(userId: number, db: Db) {}")])).toEqual([]);
   });
 
+  it("0.4.d (R5): system.ts — закритий список імен, а не виняток для цілого файлу", () => {
+    const sys = files.find((f) => f.path === "src/db/system.ts")!;
+    expect(userIdViolations([sys])).toEqual([]); // реальний файл чистий
+    expect(exportedFunctions(sys.text).map((f) => f.name).sort()).toEqual(["heartbeat", "markPingOk", "queueSize", "readHeartbeat"]);
+    // новий експорт без userId і поза списком — червоний, навіть у «системному» файлі
+    const leak = file("src/db/system.ts", [sys.text, "export async function allUserTgIds(db: Db) {}"].join("\n"));
+    expect(userIdViolations([leak])).toEqual(["src/db/system.ts: allUserTgIds(db)"]);
+    // з userId першим — дозволено і в system.ts
+    expect(userIdViolations([file("src/db/system.ts", "export async function pendingFor(userId: number, db: Db) {}")])).toEqual([]);
+    // експорт, якого сканер не вміє розібрати, — теж червоний
+    expect(userIdViolations([file("src/db/system.ts", "export { readHeartbeat } from './x';")])).toEqual(["src/db/system.ts: export { … } (експорт не розпізнано)"]);
+  });
+
   it("0.4.e: Date.now() і new Date() без аргументів — лише в clock.ts", () => {
     const timeViolations = findViolations(files).filter((v) => v.rule === "Date.now()" || v.rule.startsWith("new Date"));
     expect(timeViolations).toEqual([]);

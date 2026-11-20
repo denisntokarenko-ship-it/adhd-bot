@@ -61,8 +61,10 @@ export function findViolations(files: SourceFile[]): Violation[] {
 export const USERID_EXCEPTIONS: Record<string, string[]> = {
   "src/db/users.ts": ["ensureUser"],
   "src/db/index.ts": ["openDb", "d1Of"],
+  // Функції над таблицями без власника (Фаза 0: серце cron). Закритий список, не виняток для файлу: новий
+  // експорт тут без userId — червоний, поки його свідомо не впишуть сюди (R-0, R5).
+  "src/db/system.ts": ["readHeartbeat", "heartbeat", "markPingOk", "queueSize"],
 };
-export const SYSTEM_FILES = ["src/db/system.ts"]; // функції без власника — закритий список винятків за спекою
 
 type ExportedFn = { name: string; firstParam: string | null };
 
@@ -101,7 +103,7 @@ export function unrecognizedExports(text: string): string[] {
 export function userIdViolations(files: SourceFile[]): string[] {
   const bad: string[] = [];
   for (const f of files) {
-    if (!f.path.startsWith("src/db/") || SYSTEM_FILES.includes(f.path)) continue;
+    if (!f.path.startsWith("src/db/")) continue;
     const allowed = USERID_EXCEPTIONS[f.path] ?? [];
     for (const fn of exportedFunctions(f.text)) {
       if (fn.firstParam !== "userId" && !allowed.includes(fn.name)) bad.push(`${f.path}: ${fn.name}(${fn.firstParam ?? ""})`);

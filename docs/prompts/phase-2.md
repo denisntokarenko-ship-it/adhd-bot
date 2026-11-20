@@ -79,7 +79,7 @@
 - src/db/reminders.ts: schedule(userId, itemId, list) з INSERT … ON CONFLICT DO NOTHING; claimDue(now, limit) — атомарно переводить pending→sent і повертає лише захоплені рядки (два одночасні прогони не захоплюють той самий рядок; як це зробити в D1 — перевір живцем, висновок у «Рішення»); answer(userId, itemId) — скасовує всі pending запису.
 - Виклик schedule при створенні запису з due_at (шлях 1.3).
 - Тести (час фіксований `vi.setSystemTime`): important → рівно 4 спроби; normal → 1; тиха ніч 23:00–08:00 → 07:59 стає 08:00; перехід на літній час (остання неділя березня, Київ) не губить і не дублює; два claimDue паралельно → кожен рядок один раз; answer скасовує pending.
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/2.1.toml --report docs/mutants/2.1.md` (мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/2.1.toml --report docs/mutants/2.1.md` (мутуй після коміту):
 M1 — `attempt < max` → `attempt <= max` → червоніє тест «рівно 4»; M2 — прибери ON CONFLICT DO NOTHING → червоніє тест ідемпотентності; M3 — claimDue без зміни статусу → червоніє тест паралельних прогонів; M4 — shiftForQuiet за UTC → червоніє тест тихої ночі.
 
 НЕ робиш: відправку в Telegram і кнопки (2.2), події з дорогою (2.3), команди тиші/паузи й тексти (2.4).
@@ -137,7 +137,7 @@ M1 — `attempt < max` → `attempt <= max` → червоніє тест «рі
 - Callback ✅ → items.setStatus done + answer + points +10 (один раз: повторний натиск не дає очок); ⏰ → підменю +15 хв / +1 год / завтра 9:00 → нове reminder, snooze_count++; 🗑 → status released + answer + «Відпустив. Знайдеш пошуком, якщо що» (очки за release — у 6.1).
 - Повідомлення після натиску редагується (кнопки зникають), щоб у чаті не висіли живі кнопки на закриті справи.
 - Тести: натиск ✅ двічі → +10 один раз; ✅ між двома повторами → другий повтор не йде; 403 → cancelled; 8 нагадувань в одну годину → 6 окремих + 1 пачка.
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/2.2.toml --report docs/mutants/2.2.md` (мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/2.2.toml --report docs/mutants/2.2.md` (мутуй після коміту):
 M1 — прибери перевірку «вже done» перед очками → червоніє тест подвійного ✅; M2 — ✅ без answer → червоніє тест «повтор не йде»; M3 — поріг 6 → 60 → червоніє тест пачки.
 - Живий прогін на preview: запис «через 2 хв важливо подзвонити мамі» → 4 повтори без відповіді; ✅ на другому → далі тиша. Рядки wrangler tail — у PR.
 
@@ -161,7 +161,7 @@ M1 — прибери перевірку «вже done» перед очками
 - plannedFor для подій: eve_before (20:00 напередодні за tz, або одразу, якщо подію створено пізніше), leave_now = due − travel − 15 хв (якщо travel > 0), due — як important.
 - Зміна travel після планування → перепланування без дублів.
 - Тести (`vi.setSystemTime`): подія завтра 10:00, travel 30 → eve_before сьогодні 20:00, leave_now 09:15; подію створено о 22:00 на завтра → eve_before одразу, не о 20:00 вчорашнього; зміна travel 30→60 → один leave_now о 08:45.
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/2.3.toml --report docs/mutants/2.3.md` (мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/2.3.toml --report docs/mutants/2.3.md` (мутуй після коміту):
 M1 — прибери «−15 хв» → червоніє тест 09:15; M2 — перепланування без скасування старого leave_now → червоніє тест 30→60.
 
 НЕ робиш: команди тиші/паузи і варіації текстів (2.4), огляди (3.1).
