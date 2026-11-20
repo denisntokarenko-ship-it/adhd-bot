@@ -12,7 +12,7 @@
 | 0.2 | Специфікація Фаз 0–1 · 🔒 | Opus 5.5 | high | `phase-0/02-spec` | ✅ | ✅ |
 | 0.3 | Інструменти й CI | Sonnet 5.5 | medium | `phase-0/03-ci` | ✅ | — |
 | 0.4 | Worker, оточення preview/prod і шар даних · 👤 · 🔒 | Opus 5.5 | high | `phase-0/04-worker-db` | ✅ | ✅ |
-| 0.5 | Cron-серце й зовнішній монітор · 👤 | Opus 5.5 | high | `phase-0/05-heartbeat` | ⬜ | — |
+| 0.5 | Cron-серце й зовнішній монітор · 👤 | Opus 5.5 | high | `phase-0/05-heartbeat` | 🟡 код готовий, 👤-доказ чекає | — |
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | `review/phase-0` | ⬜ | ⬜ |
 | 1.1 | Схема записів, FTS5 і шар даних · 🔒 | Opus 5.5 | high | `phase-1/01-items-data` | ⬜ | ⬜ |
 | 1.2 | Розбір запису через Claude Haiku | Opus 5.5 | high | `phase-1/02-ai-parse` | ⬜ | — |
@@ -58,7 +58,6 @@
 
 ## Борг
 
-- Cron `* * * * *` оголошено в `wrangler.toml` обох env (спека 0.5.b), але обробника `scheduled()` ще немає (крок 0.5): на preview Cloudflare щохвилини логуватиме відсутність handler-а — очікувано до 0.5. (0.4)
 - `scripts/mutate.py` (S0.8.b, правило 9) у репозиторії ще немає — створити до першої мутаційної перевірки (0.4). (0.3)
 
 ## Рішення
@@ -74,7 +73,10 @@
 - **2026-11-20** Не-текстові update-и й `edited_message` ігноруються повністю (без `ensureUser`): 0.7.c «без запису» важить більше за «`ensureUser` на кожен update» з 0.1.c. grammY: `botInfo` підставлено з токена (без `getMe` на холодному старті), `handleUpdate` викликаємо самі — `webhookCallback` не потрібен, бо 401/200 повертаємо власною логікою. (0.4)
 - **2026-11-20** Ресурси prod (D1, бот-токен) у Фазі 0 не створюються (спека 0.5.f, `open-questions.md`): у `wrangler.toml` `production` лише оголошено з плейсхолдером `REPLACE_WITH_PROD_D1_ID`; створює 3.3. (0.4)
 - **2026-11-20** Рев'ю 0.4 (В1): `Db` — непрозорий дескриптор (`unique symbol` + `WeakMap`), поля `d1` немає; шар даних бере D1 через `d1Of(db)`. `d1Of` — другий (поряд з `openDb`) явний виняток «userId першим» для `src/db/index.ts`, бо без експортованого доступу файли `src/db/**` до D1 не дістануться; поза `src/db/` її забороняє сканер (`d1Of`, `.d1`, `DB`), тип — `test/worker/opaque-db.typecheck.ts`. (0.4)
+- **2026-11-20** Монітор (0.5, 0.3.h): healthchecks.io, Hobbyist (безкоштовно): 20 перевірок, 100 записів логу на перевірку, пінг простим `GET`/`HEAD`/`POST` на `https://hc-ping.com/<uuid>`, ліміт ≤ 5 пінгів/хв на перевірку (наш 1/хв). Сповіщення: email — на сторінці документації; Telegram у прочитаних сторінках не названий, а мінімальний період 1 хв і діапазон grace у документації числом не вказані → 👤 звіряє в UI при створенні (запасний варіант — email). UptimeRobot Free відхилено: опитування, інтервал ≥ 5 хв, heartbeat-перевірок у безкоштовному плані немає. https://healthchecks.io/pricing/ · https://healthchecks.io/docs/http_api/ · https://healthchecks.io/docs/configuring_notifications/ · https://uptimerobot.com/pricing/ (0.5)
+- **2026-11-20** Секрет називається `MONITOR_PING_URL` (спека НФ-6/0.5.c), а не `HEALTHCHECK_URL` з промпту; grace = 4 хв (спека `open-questions.md`: period 1 хв + grace 4 хв = тривога ≤ 5 хв після останнього пінгу, НФ-6), а не 5 хв з промпту. Тож у живому доказі лист чекаємо за ≤ ~5–6 хв від останнього пінгу. (0.5)
+- **2026-11-20** `scheduled()` у `src/scheduled.ts` (`runScheduled(env, clock)`): (1) `heartbeat` upsert → (2) пінг лише якщо (1) вдався, таймаут 5 с через `AbortController`, URL — секрет, у лог не потрапляє (лише статус / ім'я помилки) → (3) `processQueue` у `try/catch` (порожній каркас, TODO 2.2). Збій запису серця не ловимо: прогін падає, пінгу немає, монітор б'є тривогу (0.3.d). `/health`: prod без `MONITOR_PING_URL` → `ok:false, monitor:"missing"`, 200 (0.2.f). `stale` вже був з 0.4. Тест 0.3.f (збій додаткової роботи) не написано: додаткової роботи ще немає, `processQueue` не підміняється — додасть 2.2. (0.5)
 
 ## Нотатка для наступного кроку
 
-0.4 ✅ (рев'ю В1–В5, Д1–Д3 закрито): `src/db/system.ts` має лише `readHeartbeat` — 0.5 додає запис серця (`heartbeat(db, ...)`, `last_ping_ok_at`), `scheduled()` у `src/index.ts` і `MONITOR_PING_URL`. `/health` вже читає ключ `cron` (0.2.f «monitor:missing» — теж 0.5). Тести: `npx vitest run --reporter=dot`; `test/worker/helpers.ts` — `mockTelegram`, `send`, `baseEnv`. Вебхук preview ставить `node scripts/set-webhook.mjs <url>/webhook` (перевіряє `getWebhookInfo`). Нові файли шару даних беруть D1 лише через `d1Of(db)`, перший параметр — `userId` (охоронець у `test/node/guard-lib.ts`); новий пул текстів у `src/texts.ts` тон-тест підхопить сам.
+0.5 код і тести готові (мутації M1–M5 killed, `docs/mutants/0.5.md`); 👤-доказ (монітор, секрет `MONITOR_PING_URL` у preview, вимкнений cron → лист) — чекає Дениса, до цього статус 🟡. `src/scheduled.ts`: `processQueue` — порожній каркас для 2.2; `src/db/system.ts` має `heartbeat`, `markPingOk`, `readHeartbeat`. Для prod (3.3): окремий монітор і свій `MONITOR_PING_URL`, без нього `/health` дає `ok:false`. Борг: `scripts/mutate.py` у репозиторії досі немає — ганяємо скіловий `~/.claude/skills/prompt-roadmap/scripts/mutate.py`.
