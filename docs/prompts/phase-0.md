@@ -140,7 +140,7 @@
 - GET /health: sha збірки (змінна з CI або wrangler --var), last_run_at з heartbeat.
 - Тест-дисципліна: `env.DB` трапляється лише в src/db/ (і в тестах) — пошук по src/ у Vitest.
 - Тести: /start двічі → один рядок users; вебхук без секрету → 401; /health віддає sha.
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/0.4.toml --report docs/mutants/0.4.md` (test = "npx vitest run --reporter=dot"; формат — у шапці скрипта; мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/0.4.toml --report docs/mutants/0.4.md` (test = "npx vitest run --reporter=dot"; формат — у шапці скрипта; мутуй після коміту):
 M1 — прибери перевірку секрету вебхука → червоніє тест 401; M2 — заміни upsert на insert → червоніє тест «/start двічі»; M3 — додай `env.DB` у src/bot.ts → червоніє тест-дисципліна. Таблиця звіту — у PR.
 - Деплой лише preview: міграція `--env preview --remote`, `wrangler deploy --env preview`, setWebhook (команду готуєш, токен Денис підставляє сам). 👤 Денис пише /start preview-боту — доказ: рядок у users preview (`wrangler d1 execute … --command "SELECT tg_id, tz FROM users"`).
 
@@ -200,7 +200,7 @@ M1 — прибери перевірку секрету вебхука → че�
 - src/scheduled.ts: на кожен прогін — запис heartbeat (`cron`), потім fetch HEALTHCHECK_URL; падіння пінгу не валить прогін (лог + далі). Порожній каркас «обробити чергу» з TODO-посиланням на 2.2 — без логіки.
 - /health показує, скільки секунд тому був прогін; > 180 с → поле `stale: true`.
 - Тести: scheduled пише heartbeat; пінг падає → heartbeat усе одно записано; /health stale при старому heartbeat (фіксований час `vi.setSystemTime`).
-Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/0.5.toml --report docs/mutants/0.5.md` (мутуй після коміту):
+Мутації — `python scripts/mutate.py docs/mutants/0.5.toml --report docs/mutants/0.5.md` (мутуй після коміту):
 M1 — переставити пінг перед записом heartbeat і кинути виняток з пінгу → червоніє тест «пінг падає»; M2 — поріг stale 180 → 1800 → червоніє тест stale.
 - Живий доказ 👤: деплой preview → через 2–3 хв у моніторі зелено; тимчасово прибери cron (`wrangler deploy` без triggers) → за ≤ 6 хв лист/повідомлення від монітора → поверни cron. Скріншот або рядок сповіщення — у PR.
 
