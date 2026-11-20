@@ -122,7 +122,7 @@
 - **2026-11-20** 1.5, розбіжність промпта й спеки — за спекою: CHECK журналу `delta <> 0 AND (reason='redeem') = (delta < 0)` + `capture ⇒ capture_id NOT NULL` + частковий UNIQUE (промпт: `delta >= 0 OR redeem`); «Без дати» в /today — до 5 (промпт: 3); загальної `add(delta, reason)` немає — S1.9.e забороняє, експорти `src/db/points.ts` перелічує `test/node/points-guard.test.ts`. Очко пишеться тим самим `DB.batch`, що й `captures` (`createPending`, SELECT за `(user_id, tg_update_id)` + `ON CONFLICT DO NOTHING`, не `OR IGNORE`, щоб CHECK не ковталися). (1.5)
 - **2026-11-20** Мутації 1.5 — `docs/mutants/1.5.md`. (1.5)
 - **2026-11-20** Виправлення R-1 (`fix/phase-1-review`): (1) cron-підбір pending — `claimDuePendingCaptures`/`countPending` (`src/db/system.ts`) і `src/retry.ts`: ≤ 3 за прогін, але ПО ОДНОМУ (оренда 120 с коротша за STT 20 с + ШІ 20 с); пауза/тихі години — не беремо, спроба не витрачається; `gave_up` після 6-ї невдачі; голос `getFile`→STT→розбір, розпізнане зберігається одразу; успіх — заглушку видаляє той самий batch, очка вдруге немає; захоплення без записів (шов 5) теж підбирається. (2–4) тести R1/R3/S1.8 — `review-r1.test.ts`. (5) одна `noteFromText` у `src/note.ts`. Мутанти `docs/mutants/fix-phase-1-review.*`: 14/14 вбито; на старому коді червоніли 19 з 24 нових тестів, решта (п.2–4) — на R1/R3. Борг 1.2 закрито (`ai_calls` 25×ok=1 на preview). Preview `f15f94a`: cron живий, `queue.pending` = 0 = D1; повтор доведено лише тестами (D1 не підроблялась).
-- **R-1 п.6 (👤):** ПЕРЕСИЛАННЯ_ПЛЕЙСХОЛДЕР
+- **R-1 п.6 (👤) ✅:** пересилання з чужого каналу на preview → `captures#24` і його `items` мають `source='forward'`, `parsed` (звірено в D1, лише читання).
 
 ## Нотатка для наступного кроку
 
