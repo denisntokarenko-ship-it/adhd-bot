@@ -9,7 +9,7 @@
 | id | Назва | Модель | Effort | Гілка | Статус | Рев'ю |
 |---|---|---|---|---|---|---|
 | 0.1 | Каркас репозиторію і процес | Opus 5.5 | high | `main` (перший коміт) | ✅ | — |
-| 0.2 | Специфікація Фаз 0–1 · 🔒 | Opus 5.5 | high | `phase-0/02-spec` | ⬜ | ⬜ |
+| 0.2 | Специфікація Фаз 0–1 · 🔒 | Opus 5.5 | high | `phase-0/02-spec` | ✅ | ✅ |
 | 0.3 | Інструменти й CI | Sonnet 5.5 | medium | `phase-0/03-ci` | ⬜ | — |
 | 0.4 | Worker, оточення preview/prod і шар даних · 👤 · 🔒 | Opus 5.5 | high | `phase-0/04-worker-db` | ⬜ | ⬜ |
 | 0.5 | Cron-серце й зовнішній монітор · 👤 | Opus 5.5 | high | `phase-0/05-heartbeat` | ⬜ | — |
@@ -64,8 +64,9 @@
 
 - **2026-11-20** Гілки фазових рев'ю — `review/phase-<N>`, фінального — `review/phase-F` (за правилом «Гілки» в `docs/PROMPTS.md`; у промптах фаз явно не названі). (0.1)
 - **2026-11-20** `scripts/check-docs.sh` перевіряє `docs/spec/*.md`, `docs/prompts/*.md`, `CLAUDE.md`, `docs/PROGRESS.md` ≤ 40 КБ і `docs/PROMPTS.md` ≤ 60 КБ; відсутній файл — не помилка. (0.1)
+- **2026-11-20** Рішення специфікації (allowlist, `captures`, `date_unclear`, повтори розбору, правила дат) — у `docs/spec/decisions.md`, відкриті питання — `docs/spec/open-questions.md`. (0.2)
+- **2026-11-20** Рев'ю 0.2 (ПРИЙНЯТИ ПІСЛЯ ВИПРАВЛЕНЬ) закрито: Б1–Б2, В1–В6, Д1–Д6 виправлено в спеці, рядки рішень — `docs/spec/decisions.md`; «Борг» не поповнено. (0.2)
 
 ## Нотатка для наступного кроку
 
-0.2 пише зміст `docs/spec/00-common.md` (зараз лише заголовки) і зрізи `phase-0.md`, `phase-1.md`; індекс — `docs/spec/README.md`.
-Блок «Перевірка» і правила — у `CLAUDE.md`. Бюджет: `bash scripts/check-docs.sh` (exit 0 = зелено).
+0.3 (CI): тримай разом з `npm run check:docs` = `bash scripts/check-docs.sh`; `scripts/mutate.py` відмовляється працювати з брудним деревом (S0.8). Спека Фаз 0–1 готова: `docs/spec/phase-0.md`, `phase-1.md` (історії `S0.x`/`S1.x`, критерії `0.1.a`…). `phase-1.md` ≈ 37,9 КБ з 40 — нові правила Фази 1 пиши в `decisions.md`, а не в зріз. Після рев'ю 0.2 у спеці є `capture_fixes` + тригери (S1.6), `users.*_variant_idx`, перевірка `chat.type` (0.6.d) і fail-closed `WEBHOOK_SECRET` (0.1.g): 0.4/1.1 реалізують їх за DDL зі спеки.
