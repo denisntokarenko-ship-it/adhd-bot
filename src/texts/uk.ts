@@ -95,6 +95,19 @@ export const NO_DATE = "без дати";
 export const BTN_WRONG = "✏️ Не так";
 export const BTN_CLARIFY = "📅 Уточнити";
 export const MORE_PREFIX = "…ще";
+export const POINT_LINE = "+1 ✨"; // очко за захоплення (S1.9): у квитанції нового запису, не в квитанції виправлення
+
+// /today (S1.10) і /export (S1.11). Порожній день — пул ≥ 3 варіантів; без слів про «прострочене» (НФ-4).
+export const TODAY_SECTION = "Сьогодні";
+export const UNDATED_SECTION = "Без дати";
+export const ALL_DAY_LABEL = "весь день";
+export const PENDING_NOTE = "розберу пізніше";
+export const EMPTY_TODAY_POOL: readonly string[] = [
+  "На сьогодні нічого не записано — день вільний 🌿",
+  "Порожньо й спокійно: жодної справи на сьогодні ☕",
+  "Тут чисто! Що спливе в голові — кидай мені 🧠",
+];
+export const EXPORT_CAPTION = "Усе, що я про тебе знаю, в одному файлі 📦";
 
 // Причини питання про дату (слова, без звинувачень). Функція, а не об'єкт: тест тону збирає лише рядки й пули.
 export function clarifyReason(kind: "unclear" | "event_no_date" | "past" | "bad_format" | "too_far"): string {

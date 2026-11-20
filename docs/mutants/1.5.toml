@@ -1,0 +1,114 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "migrations/0003_points.sql"
+old = "CHECK (delta <> 0 AND (reason = 'redeem') = (delta < 0)),"
+new = "CHECK (1),"
+why = "прибрано CHECK знака/redeem на journal -> БД приймає мінус не-redeem і нуль -> червоніє «БД відхиляє delta=0, мінус…»"
+match = "1.9.c: БД відхиляє"
+
+[[mutant]]
+id = "M2"
+file = "src/db/items.ts"
+old = "FROM items WHERE user_id = ?1 ORDER BY id"
+new = "FROM items WHERE ?1 IS NOT NULL ORDER BY id"
+why = "/export без фільтра user_id -> у файл потрапляють чужі записи -> червоніє «ізоляція — кожен отримує лише своє»"
+match = "1.11.d: ізоляція"
+
+[[mutant]]
+id = "M3"
+file = "src/commands.ts"
+old = "const [from, to] = dayBounds(tz, now);"
+new = "const [from, to] = [Math.floor(now / 86_400_000) * 86_400_000, Math.floor(now / 86_400_000) * 86_400_000 + 86_400_000];"
+why = "/today за UTC-добою замість доби в tz -> о 00:30 за Києвом бере вчорашні записи -> червоніє «о 00:30 за Києвом»"
+match = "1.10.b"
+
+[[mutant]]
+id = "M4"
+file = "migrations/0003_points.sql"
+old = "CREATE UNIQUE INDEX ux_ledger_capture"
+new = "CREATE INDEX ux_ledger_capture"
+why = "унікальність очка за захоплення — не в БД -> друге очко за те саме захоплення проходить -> червоніє «UNIQUE у БД»"
+match = "1.9.a: UNIQUE у БД"
+
+[[mutant]]
+id = "M5"
+file = "migrations/0003_points.sql"
+old = "CHECK (reason <> 'capture' OR capture_id IS NOT NULL)"
+new = "CHECK (1)"
+why = "capture без capture_id обходить UNIQUE (NULL-и різні) -> червоніє «capture без capture_id»"
+match = "1.9.c: БД відхиляє"
+
+[[mutant]]
+id = "M6"
+file = "src/db/points.ts"
+old = "FROM points_ledger WHERE user_id = ?1\")"
+new = "FROM points_ledger WHERE ?1 IS NOT NULL\")"
+why = "balance рахує очки всіх користувачів -> червоніє «balance = SUM(delta) цього користувача»"
+match = "1.9.b"
+
+[[mutant]]
+id = "M7"
+file = "src/capture.ts"
+old = "origin.heard, 1); // +1"
+new = "origin.heard, 0); // +1"
+why = "квитанція нового захоплення не каже «+1 ✨» -> червоніє «нове захоплення → рівно один рядок +1»"
+match = "1.9.a: нове захоплення"
+
+[[mutant]]
+id = "M8"
+file = "src/db/captures.ts"
+old = "    captureStatement(userId, db, input.tgUpdateId, now),"
+new = "    d1.prepare(\"SELECT 1\"),"
+why = "очко не пишеться разом із захопленням -> червоніє «нове захоплення → рівно один рядок +1»"
+match = "1.9.a: нове захоплення"
+
+[[mutant]]
+id = "M9"
+file = "src/db/items.ts"
+old = "WHERE i.user_id = ?1 AND i.status = 'open' AND i.due_at >= ?2 AND i.due_at < ?3"
+new = "WHERE i.user_id = ?1 AND i.due_at >= ?2 AND i.due_at < ?3"
+why = "/today показує зроблене й відпущене -> червоніє «заголовок з датою й балансом…»"
+match = "1.10.a"
+
+[[mutant]]
+id = "M10"
+file = "src/commands.ts"
+old = "export const UNDATED_LIMIT = 5;"
+new = "export const UNDATED_LIMIT = 50;"
+why = "«Без дати» без обмеження до 5 -> нема «…ще N» -> червоніє «без дати — 5 найновіших і …ще N»"
+match = "1.10.a"
+
+[[mutant]]
+id = "M11"
+file = "src/commands.ts"
+old = "const title = escapeHtml(it.title);"
+new = "const title = it.title;"
+why = "назва в /today не екранується -> «<b>x & y» ламає HTML -> червоніє «HTML екранується»"
+match = "1.10.e"
+
+[[mutant]]
+id = "M12"
+file = "src/commands.ts"
+old = "localIso(now, d.user.tz).slice(0, 10)"
+new = "new Date(now).toISOString().slice(0, 10)"
+why = "дата в імені файлу /export за UTC, а не за tz -> о 00:30 суботи файл підписано п'ятницею -> червоніє «документ adhd-export-<дата в tz>.json»"
+match = "1.11.a/c/e"
+
+[[mutant]]
+id = "M13"
+file = "src/commands.ts"
+old = "it.pending === 1 &&"
+new = "false &&"
+why = "запасна нотатка в /today без позначки «розберу пізніше» -> червоніє «порожній день… запасна нотатка з приміткою»"
+match = "1.10.d"
+
+[[mutant]]
+id = "M14"
+file = "src/commands.ts"
+old = "await setVariantIdx(d.user.id, \"today\", idx, d.db);"
+new = ""
+why = "індекс варіанта порожнього дня не зберігається -> підряд та сама фраза -> червоніє «порожній день — фраза з пулу»"
+match = "1.10.d"

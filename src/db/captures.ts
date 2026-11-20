@@ -1,6 +1,7 @@
 import { d1Of, type Db } from "./index";
 import { VOICE_PENDING_TITLE } from "../texts";
 import { insertStatement, type NewItem } from "./items";
+import { captureStatement } from "./points";
 
 export type CaptureSource = "text" | "voice" | "forward";
 export type CaptureStatus = "pending" | "parsed" | "gave_up";
@@ -49,22 +50,45 @@ export async function isKnownUpdate(userId: number, db: Db, tgUpdateId: number):
   return (row?.n ?? 0) > 0;
 }
 
-// Нове захоплення — ДО виклику ШІ, як pending з орендою (S1.4.c). null — такий update_id уже є (дубль доставки).
+// Нове захоплення — ДО виклику ШІ, як pending з орендою (S1.4.c), разом з очком +1 — ОДНИМ batch (S1.4.c, S1.9.a):
+// захоплення без очка чи очко без захоплення неможливі. Очко дає саме створення, тож запасна нотатка, голосове без STT
+// і пересилання його мають, а повтор розбору й виправлення — ні (S1.9.d).
+// null — такий update_id уже є (дубль доставки): очка вдруге не буде (ux_ledger_capture).
 export async function createPending(
   userId: number,
   db: Db,
   input: { tgUpdateId: number; source: CaptureSource; rawText: string | null; tgFileId?: string },
   now: number,
 ): Promise<Capture | null> {
-  return d1Of(db)
-    .prepare(
-      `INSERT INTO captures (user_id, tg_update_id, source, raw_text, tg_file_id, status, next_try_at, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?7, 'pending', ?5, ?6)
-       ON CONFLICT(user_id, tg_update_id) DO NOTHING
-       RETURNING ${COLUMNS}`,
-    )
-    .bind(userId, input.tgUpdateId, input.source, input.rawText, now + LEASE_MS, now, input.tgFileId ?? null)
-    .first<Capture>();
+  const d1 = d1Of(db);
+  const res = await d1.batch<Capture>([
+    d1
+      .prepare(
+        `INSERT INTO captures (user_id, tg_update_id, source, raw_text, tg_file_id, status, next_try_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?7, 'pending', ?5, ?6)
+         ON CONFLICT(user_id, tg_update_id) DO NOTHING
+         RETURNING ${COLUMNS}`,
+      )
+      .bind(userId, input.tgUpdateId, input.source, input.rawText, now + LEASE_MS, now, input.tgFileId ?? null),
+    captureStatement(userId, db, input.tgUpdateId, now),
+  ]);
+  return res[0]?.results[0] ?? null;
+}
+
+// Усі захоплення користувача для /export (S1.11): лише поля зі спеки, без tg_update_id/tg_file_id.
+export interface CaptureExportRow {
+  id: number;
+  source: CaptureSource;
+  raw_text: string | null;
+  status: CaptureStatus;
+  created_at: number;
+}
+export async function listForExport(userId: number, db: Db): Promise<CaptureExportRow[]> {
+  const res = await d1Of(db)
+    .prepare("SELECT id, source, raw_text, status, created_at FROM captures WHERE user_id = ?1 ORDER BY id")
+    .bind(userId)
+    .all<CaptureExportRow>();
+  return res.results;
 }
 
 // Розбір вдався: захоплення → parsed і записи — ОДНИМ batch (НФ-3).

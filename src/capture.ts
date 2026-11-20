@@ -121,8 +121,9 @@ async function sendReceipt(
   items: ParsedItem[],
   now: number,
   heard?: string,
+  points = 0,
 ) {
-  const r = buildReceipt(intro, items.map(entryOf), cap.id, d.user.tz, now, heard);
+  const r = buildReceipt(intro, items.map(entryOf), cap.id, d.user.tz, now, heard, points);
   const sent = await ctx.reply(r.text, {
     parse_mode: "HTML",
     reply_markup: { inline_keyboard: [r.buttons.map((b) => ({ text: b.text, callback_data: b.data }))] },
@@ -185,7 +186,7 @@ async function captureNew(
     console.error("markParsed failed"); // розбір є, а зберегти не вдалося: тримаємо хоча б сирий текст
     return fallbackReply(ctx, d, cap, "unavailable", last, now);
   }
-  await sendReceipt(ctx, d, cap, v.text, out.items, now, origin.heard);
+  await sendReceipt(ctx, d, cap, v.text, out.items, now, origin.heard, 1); // +1 — очко створене разом із захопленням
 }
 
 async function applyFix(
