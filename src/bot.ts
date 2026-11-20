@@ -37,6 +37,24 @@ function botInfoFor(token: string): UserFromGetMe {
   } as UserFromGetMe;
 }
 
+// Залежності захоплення: ключ ШІ, STT, ліміт — з оточення; мок з `deps` перекриває (у тестах). Спільне для вебхука й cron-повтору.
+export function captureDepsFor(env: AppEnv, deps: Pick<BotDeps, "clock" | "rand" | "aiTimeoutMs" | "ai" | "stt">, db: Db, user: User): CaptureDeps {
+  const cfg = aiConfig(env);
+  const apiKey = env.ANTHROPIC_API_KEY?.trim();
+  return {
+    db,
+    user,
+    ai: deps.ai !== undefined ? deps.ai : apiKey ? createAiClient(apiKey) : null,
+    stt: deps.stt !== undefined ? deps.stt : env.AI ? createStt(env.AI) : null,
+    botToken: env.BOT_TOKEN ?? "",
+    clock: deps.clock,
+    rand: deps.rand,
+    model: cfg.model,
+    dailyLimit: cfg.dailyLimit,
+    ...(deps.aiTimeoutMs === undefined ? {} : { timeoutMs: deps.aiTimeoutMs }),
+  };
+}
+
 const START_RE = /^\/start(@\w+)?(\s|$)/;
 const TODAY_RE = /^\/today(@\w+)?(\s|$)/;
 const EXPORT_RE = /^\/export(@\w+)?(\s|$)/;
@@ -49,22 +67,7 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
   if (allowlist === null) console.error("ALLOWED_TG_IDS is empty or invalid: rejecting everyone");
   const db = openDb(env);
   const bot = new Bot(token, { botInfo: botInfoFor(token) });
-  const cfg = aiConfig(env);
-  const apiKey = env.ANTHROPIC_API_KEY?.trim();
-  const ai = deps.ai !== undefined ? deps.ai : apiKey ? createAiClient(apiKey) : null;
-  const stt = deps.stt !== undefined ? deps.stt : env.AI ? createStt(env.AI) : null;
-  const captureDeps = (user: User): CaptureDeps => ({
-    db,
-    user,
-    ai,
-    stt,
-    botToken: token,
-    clock: deps.clock,
-    rand: deps.rand,
-    model: cfg.model,
-    dailyLimit: cfg.dailyLimit,
-    ...(deps.aiTimeoutMs === undefined ? {} : { timeoutMs: deps.aiTimeoutMs }),
-  });
+  const captureDeps = (user: User): CaptureDeps => captureDepsFor(env, deps, db, user);
   // Збій D1 до того, як щось збережено → 500, і Telegram повторить доставку (S1.4.h).
   const userOrRetry = async (tgId: number): Promise<User> => {
     try {

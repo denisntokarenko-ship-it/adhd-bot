@@ -1,4 +1,5 @@
 import { d1Of, type Db } from "./index";
+import { noteFromText } from "../note";
 import { VOICE_PENDING_TITLE } from "../texts";
 import { insertStatement, type NewItem } from "./items";
 import { captureStatement } from "./points";
@@ -22,18 +23,18 @@ export interface Capture {
   created_at: number;
 }
 
-const COLUMNS =
+export const CAPTURE_COLUMNS =
   "id, user_id, tg_update_id, source, raw_text, tg_file_id, status, parse_attempts, next_try_at, receipt_message_id, variant_idx, fix_requested_at, created_at";
 
 // «Оренда» нового захоплення (S1.4.c): якщо процес помре посеред виклику ШІ, після неї захоплення можна підібрати.
 export const LEASE_MS = 120_000;
-const FALLBACK_TITLE_LEN = 80;
+export const MAX_ATTEMPTS = 6; // після 6-ї невдачі — gave_up (S1.5.b)
 
 type ParsedInput = Omit<NewItem, "captureId" | "rawText" | "source">;
 
 export async function getById(userId: number, db: Db, id: number): Promise<Capture | null> {
   return d1Of(db)
-    .prepare(`SELECT ${COLUMNS} FROM captures WHERE id = ?1 AND user_id = ?2`)
+    .prepare(`SELECT ${CAPTURE_COLUMNS} FROM captures WHERE id = ?1 AND user_id = ?2`)
     .bind(id, userId)
     .first<Capture>();
 }
@@ -67,7 +68,7 @@ export async function createPending(
         `INSERT INTO captures (user_id, tg_update_id, source, raw_text, tg_file_id, status, next_try_at, created_at)
          VALUES (?1, ?2, ?3, ?4, ?7, 'pending', ?5, ?6)
          ON CONFLICT(user_id, tg_update_id) DO NOTHING
-         RETURNING ${COLUMNS}`,
+         RETURNING ${CAPTURE_COLUMNS}`,
       )
       .bind(userId, input.tgUpdateId, input.source, input.rawText, now + LEASE_MS, now, input.tgFileId ?? null),
     captureStatement(userId, db, input.tgUpdateId, now),
@@ -91,7 +92,9 @@ export async function listForExport(userId: number, db: Db): Promise<CaptureExpo
   return res.results;
 }
 
-// Розбір вдався: захоплення → parsed і записи — ОДНИМ batch (НФ-3).
+// Розбір вдався: захоплення → parsed і записи — ОДНИМ batch (НФ-3). Якщо це повтор після запасної нотатки (S1.5.d),
+// нотатку (єдиний відкритий запис цього захоплення) видаляє той самий batch; для нового захоплення DELETE нічого не чіпає.
+// `capture.raw_text` — актуальний текст (для голосового, розпізнаного вже в cron, — саме розпізнане).
 export async function markParsed(
   userId: number,
   db: Db,
@@ -102,13 +105,29 @@ export async function markParsed(
 ): Promise<void> {
   const d1 = d1Of(db);
   await d1.batch([
+    d1.prepare("DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'").bind(userId, capture.id),
     d1
-      .prepare("UPDATE captures SET status = 'parsed', next_try_at = NULL, variant_idx = ?3 WHERE id = ?1 AND user_id = ?2")
-      .bind(capture.id, userId, variantIdx),
+      .prepare(
+        "UPDATE captures SET status = 'parsed', next_try_at = NULL, variant_idx = ?3, raw_text = ?4 WHERE id = ?1 AND user_id = ?2",
+      )
+      .bind(capture.id, userId, variantIdx, capture.raw_text),
     ...items.map((it) =>
       insertStatement(userId, db, { ...it, captureId: capture.id, rawText: capture.raw_text, source: capture.source }, now),
     ),
   ]);
+}
+
+// Запасна нотатка захоплення: з тексту (`noteFromText`, S1.5.a) чи заглушка для голосового без розпізнавання (S1.7.d).
+function fallbackNote(capture: Capture, text: string | null) {
+  const note = text === null ? null : noteFromText(text);
+  return {
+    kind: "note" as const,
+    title: note === null ? VOICE_PENDING_TITLE : note.title,
+    body: note === null ? null : note.body,
+    captureId: capture.id,
+    rawText: text,
+    source: capture.source,
+  };
 }
 
 // ШІ недоступний (S1.5.a): запасна нотатка з raw_text, захоплення лишається pending для повтору.
@@ -122,31 +141,59 @@ export async function saveFallback(
   variantIdx: number,
   now: number,
 ): Promise<void> {
-  // Голосове без розпізнавання (S1.7.d): тексту ще немає — запис-заглушка без raw_text, повтор STT — окремий крок.
-  const raw = capture.raw_text ?? "";
-  const flat = raw.replace(/\s+/g, " ").trim();
-  const title =
-    capture.raw_text === null ? VOICE_PENDING_TITLE : Array.from(flat).slice(0, FALLBACK_TITLE_LEN).join("").trim() || "Нотатка";
   const d1 = d1Of(db);
   const attempts = reason === "limit" ? capture.parse_attempts : capture.parse_attempts + 1;
   await d1.batch([
     d1
       .prepare("UPDATE captures SET parse_attempts = ?3, next_try_at = ?4, variant_idx = ?5 WHERE id = ?1 AND user_id = ?2")
       .bind(capture.id, userId, attempts, retryAt, variantIdx),
-    insertStatement(
-      userId,
-      db,
-      {
-        kind: "note",
-        title,
-        body: raw.length > 0 ? Array.from(raw).slice(0, 4000).join("") : null,
-        captureId: capture.id,
-        rawText: capture.raw_text,
-        source: capture.source,
-      },
-      now,
-    ),
+    insertStatement(userId, db, fallbackNote(capture, capture.raw_text), now),
   ]);
+}
+
+// ── Cron-повтор pending (S1.5.b–e, S1.7.d) ────────────────────────────────────────────────────────────────────
+
+// Голосове розпізнано вже в cron: зберегти текст і замінити заглушку «Голосове — розберу пізніше» нотаткою з цього тексту.
+// Один batch: якщо далі ШІ знову впаде, STT вдруге не кликатимемо (raw_text уже є).
+export async function storeTranscript(userId: number, db: Db, capture: Capture, text: string, now: number): Promise<void> {
+  const d1 = d1Of(db);
+  await d1.batch([
+    d1.prepare("UPDATE captures SET raw_text = ?3 WHERE id = ?1 AND user_id = ?2").bind(capture.id, userId, text),
+    d1.prepare("DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'").bind(userId, capture.id),
+    insertStatement(userId, db, fallbackNote(capture, text), now),
+  ]);
+}
+
+// Повтор не вдався. `attempts` — нове значення лічильника (при ліміті доби — старе: спроба не витрачається);
+// `nextTryAt === null` — gave_up (S1.5.b): нотатка лишається, людині тиша. Якщо в захоплення немає жодного запису
+// (збій D1 між createPending і нотаткою, шов 5), запасну нотатку створюємо тут: запис не губиться.
+export async function markRetryFailed(
+  userId: number,
+  db: Db,
+  capture: Capture,
+  attempts: number,
+  nextTryAt: number | null,
+  now: number,
+): Promise<void> {
+  const d1 = d1Of(db);
+  const has = await d1
+    .prepare("SELECT COUNT(*) AS n FROM items WHERE user_id = ?1 AND capture_id = ?2")
+    .bind(userId, capture.id)
+    .first<{ n: number }>();
+  await d1.batch([
+    d1
+      .prepare("UPDATE captures SET parse_attempts = ?3, next_try_at = ?4, status = ?5 WHERE id = ?1 AND user_id = ?2")
+      .bind(capture.id, userId, attempts, nextTryAt, nextTryAt === null ? "gave_up" : "pending"),
+    ...((has?.n ?? 0) === 0 ? [insertStatement(userId, db, fallbackNote(capture, capture.raw_text), now)] : []),
+  ]);
+}
+
+// Повтор безнадійний (розпізнане порожнє — у голосовому лише тиша): більше не підбирати, заглушка лишається.
+export async function giveUp(userId: number, db: Db, captureId: number): Promise<void> {
+  await d1Of(db)
+    .prepare("UPDATE captures SET status = 'gave_up', next_try_at = NULL WHERE id = ?1 AND user_id = ?2")
+    .bind(captureId, userId)
+    .run();
 }
 
 export async function setReceipt(userId: number, db: Db, captureId: number, messageId: number): Promise<void> {
@@ -177,7 +224,7 @@ export async function requestFix(userId: number, db: Db, captureId: number, now:
       .bind(userId, captureId),
     d1
       .prepare(
-        `UPDATE captures SET fix_requested_at = ?3 WHERE id = ?1 AND user_id = ?2 AND status = 'parsed' RETURNING ${COLUMNS}`,
+        `UPDATE captures SET fix_requested_at = ?3 WHERE id = ?1 AND user_id = ?2 AND status = 'parsed' RETURNING ${CAPTURE_COLUMNS}`,
       )
       .bind(captureId, userId, now),
   ]);
@@ -188,7 +235,7 @@ export async function requestFix(userId: number, db: Db, captureId: number, now:
 export async function activeFix(userId: number, db: Db, now: number, windowMs: number): Promise<Capture | null> {
   return d1Of(db)
     .prepare(
-      `SELECT ${COLUMNS} FROM captures
+      `SELECT ${CAPTURE_COLUMNS} FROM captures
        WHERE user_id = ?1 AND fix_requested_at IS NOT NULL AND fix_requested_at >= ?2 AND status = 'parsed'
        ORDER BY fix_requested_at DESC LIMIT 1`,
     )

@@ -87,3 +87,16 @@ export function localToUtc(local: string, tz: string): number | null {
   if (candidates.length === 0) return wall - before; // «діра» весняного переходу
   return Math.min(...candidates); // подвійна година → раніше входження
 }
+
+// Хвилини від локальної півночі (0..1439) за годинником `tz`.
+export function minutesOfDay(instant: number, tz: string): number {
+  const p = localParts(instant, tz);
+  return p.h * 60 + p.mi;
+}
+
+// Тихі години `quiet_from … quiet_to` (хвилини доби): `[from, to)`, з переходом через північ (23:00–08:00:
+// о 02:00 тиша, рівно о 08:00 — уже ні). `from === to` — тихих годин немає (00-common).
+export function inQuietHours(from: number, to: number, minute: number): boolean {
+  if (from === to) return false;
+  return from < to ? minute >= from && minute < to : minute >= from || minute < to;
+}

@@ -63,7 +63,7 @@ export const USERID_EXCEPTIONS: Record<string, string[]> = {
   "src/db/index.ts": ["openDb", "d1Of"],
   // Функції над таблицями без власника (Фаза 0: серце cron). Закритий список, не виняток для файлу: новий
   // експорт тут без userId — червоний, поки його свідомо не впишуть сюди (R-0, R5).
-  "src/db/system.ts": ["readHeartbeat", "heartbeat", "markPingOk", "queueSize"],
+  "src/db/system.ts": ["readHeartbeat", "heartbeat", "markPingOk", "countPending", "claimDuePendingCaptures"],
 };
 
 type ExportedFn = { name: string; firstParam: string | null };

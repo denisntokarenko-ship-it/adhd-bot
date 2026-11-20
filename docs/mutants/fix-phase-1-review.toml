@@ -1,0 +1,136 @@
+# Мутанти fix/phase-1-review: R1, R3 (вижили в R-1) + нові на коді cron-підбору й спільної «нотатки з тексту».
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/fix-phase-1-review.toml --report docs/mutants/fix-phase-1-review.md
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "R1"
+file = "src/db/captures.ts"
+old = '''d1.prepare("DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'").bind(userId, capture.id),
+    ...items.map((it) =>
+      insertStatement(userId, db, { ...it, captureId: capture.id, rawText: capture.raw_text, source: capture.source }, now),
+    ),
+    d1
+      .prepare("UPDATE captures SET fix_requested_at = NULL'''
+new = '''d1.prepare("DELETE FROM items WHERE user_id = ?1 AND ?2 = ?2 AND status = 'open'").bind(userId, capture.id),
+    ...items.map((it) =>
+      insertStatement(userId, db, { ...it, captureId: capture.id, rawText: capture.raw_text, source: capture.source }, now),
+    ),
+    d1
+      .prepare("UPDATE captures SET fix_requested_at = NULL'''
+why = "«Не так» стирає ВСІ відкриті записи людини, а не лише свого захоплення (S1.6.h)"
+match = 'R-1 п\.2'
+
+[[mutant]]
+id = "R3"
+file = "src/bot.ts"
+old = '''      return await ensureUser(tgId, db, deps.clock.now());
+    } catch (err) {
+      throw new RetryableError(err);'''
+new = '''      return await ensureUser(tgId, db, deps.clock.now());
+    } catch (err) {
+      throw err;'''
+why = "збій D1 на ensureUser без RetryableError — тихий 200, Telegram не повторить (S1.4.h)"
+match = 'R-1 п\.3'
+
+[[mutant]]
+id = "N1"
+file = "src/db/system.ts"
+old = '''WHERE id = ?1 AND status = 'pending' AND next_try_at IS NOT NULL AND next_try_at <= ?3'''
+new = '''WHERE id = ?1 AND status = 'pending' AND ?3 = ?3'''
+why = "оренда без перевірки next_try_at: два паралельні прогони беруть одне захоплення (S1.5.c)"
+match = '1\.5\.c: оренда'
+
+[[mutant]]
+id = "N2"
+file = "src/time.ts"
+old = '''minute >= from || minute < to'''
+new = '''minute >= from && minute < to'''
+why = "тихі години з переходом через північ не працюють: о 02:00 бот не мовчить (S1.5.e)"
+match = 'S1\.5\.e'
+
+[[mutant]]
+id = "N3"
+file = "src/retry.ts"
+old = '''attempts >= MAX_ATTEMPTS ? null'''
+new = '''attempts > MAX_ATTEMPTS ? null'''
+why = "gave_up лише після 7-ї невдачі замість 6-ї (S1.5.b)"
+match = 'S1\.5\.b'
+
+[[mutant]]
+id = "N4"
+file = "src/retry.ts"
+old = '''i < MAX_PER_RUN'''
+new = '''i <= MAX_PER_RUN'''
+why = "за прогін береться 4 захоплення замість 3 (S1.5.g)"
+match = 'S1\.5\.g'
+
+[[mutant]]
+id = "N5"
+file = "src/retry.ts"
+old = '''markRetryFailed(userId, d.db, cap, cap.parse_attempts, dayBounds'''
+new = '''markRetryFailed(userId, d.db, cap, cap.parse_attempts + 1, dayBounds'''
+why = "ліміт доби витрачає спробу (S1.5.f)"
+match = 'ліміт доби'
+
+[[mutant]]
+id = "N6"
+file = "src/db/captures.ts"
+old = '''d1.prepare("DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'").bind(userId, capture.id),
+    d1
+      .prepare(
+        "UPDATE captures SET status = 'parsed''''
+new = '''d1
+      .prepare(
+        "UPDATE captures SET status = 'parsed''''
+why = "успішний повтор не видаляє запасну нотатку — у людини дубль (S1.5.d)"
+match = '1\.5\.d'
+
+[[mutant]]
+id = "N7"
+file = "src/db/system.ts"
+old = '''c.pause_until > now'''
+new = '''c.pause_until >= now'''
+why = "pause_until = now ще вважається паузою (S1.5.e)"
+match = 'pause_until'
+
+[[mutant]]
+id = "N8"
+file = "src/db/system.ts"
+old = '''FROM captures WHERE status = 'pending'").first'''
+new = '''FROM captures").first'''
+why = "/health.queue.pending рахує всі захоплення, а не лише pending (S1.5.h)"
+match = 'S1\.5\.h'
+
+[[mutant]]
+id = "N9"
+file = "src/note.ts"
+old = '''return s.replace(/[\r\n\t]+/g, " ").replace(CONTROL_KEEP_NL, "").trim();'''
+new = '''return s.replace(/[\r\n\t]+/g, " ").trim();'''
+why = "керуючі символи лишаються в заголовку нотатки (шов 1)"
+match = 'R-1 п\.5'
+
+[[mutant]]
+id = "N10"
+file = "src/retry.ts"
+old = '''cap = { ...cap, raw_text: heard };'''
+new = '''cap = { ...cap };'''
+why = "розпізнане не потрапляє в розбір: ШІ отримує порожній текст (S1.7.d)"
+match = 'S1\.7\.d'
+
+[[mutant]]
+id = "N11"
+file = "src/db/captures.ts"
+old = '''...((has?.n ?? 0) === 0 ?'''
+new = '''...((has?.n ?? 0) >= 0 ?'''
+why = "повтор, що не вдався, щоразу додає ще одну запасну нотатку (шов 5, S1.5.b)"
+match = 'S1\.5\.b'
+
+[[mutant]]
+id = "N12"
+file = "src/db/system.ts"
+old = '''if (c.pause_until !== null && c.pause_until > now) continue;
+    if (inQuietHours(c.quiet_from, c.quiet_to, minutesOfDay(now, c.tz))) continue;'''
+new = '''if (c.pause_until !== null && c.pause_until > now) continue;'''
+why = "підбір ігнорує тихі години (S1.5.e)"
+match = 'S1\.5\.e'
