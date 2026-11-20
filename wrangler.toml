@@ -6,7 +6,7 @@
 name = "adhd-bot"
 main = "src/index.ts"
 compatibility_date = "2026-11-18" # остання дата, яку підтримує workerd 2026-11-18 з wrangler 4.165
-account_id = "REPLACE_WITH_ACCOUNT_ID" # 👤 крок 0.4, п. 2: `npx wrangler whoami`
+account_id = "3d91f58920a9d270ee8d634d17e164b1" # акаунт Дениса (єдиний у `wrangler whoami`)
 workers_dev = false
 
 [env.preview]
