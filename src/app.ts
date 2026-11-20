@@ -1,8 +1,10 @@
+import { BotError } from "grammy";
 import type { Update } from "grammy/types";
 import { processUpdate, type BotDeps } from "./bot";
 import { systemClock } from "./clock";
 import { secretsEqual } from "./config";
 import type { AppEnv } from "./env";
+import { RetryableError } from "./errors";
 import { healthResponse } from "./health";
 
 const defaultDeps: BotDeps = { clock: systemClock, rand: Math.random };
@@ -41,6 +43,9 @@ export async function handleRequest(
       await processUpdate(update, env, deps);
     } catch (err) {
       console.error("update failed", err instanceof Error ? err.name : "unknown");
+      // Нічого не збережено (збій D1 на ensureUser/захопленні) → 500: Telegram повторить, а запис не загубиться (S1.4.h).
+      // grammY заворачує помилки обробника в BotError — розпаковуємо.
+      if ((err instanceof BotError ? err.error : err) instanceof RetryableError) return text(500, "");
     }
     return text(200, "");
   }

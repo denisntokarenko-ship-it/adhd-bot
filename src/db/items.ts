@@ -166,3 +166,35 @@ export async function search(userId: number, db: Db, query: string, limit = 20):
     .all<Item>();
   return res.results;
 }
+
+// Той самий INSERT, що `create`, але без виконання: для атомарних груп `DB.batch` (НФ-3) — захоплення + записи.
+export function insertStatement(userId: number, db: Db, input: NewItem, now: number): D1PreparedStatement {
+  return d1Of(db)
+    .prepare(
+      `INSERT INTO items (user_id, capture_id, kind, title, body, raw_text, source, due_at, all_day, priority, travel_min, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+    )
+    .bind(
+      userId,
+      input.captureId ?? null,
+      input.kind,
+      input.title,
+      input.body ?? null,
+      input.rawText ?? null,
+      input.source,
+      input.dueAt ?? null,
+      input.allDay ? 1 : 0,
+      input.priority ?? "normal",
+      input.travelMin ?? null,
+      now,
+    );
+}
+
+// Записи одного захоплення (за id) — для квитанції й тестів.
+export async function listByCapture(userId: number, db: Db, captureId: number): Promise<Item[]> {
+  const res = await d1Of(db)
+    .prepare(`SELECT ${COLUMNS} FROM items WHERE user_id = ?1 AND capture_id = ?2 ORDER BY id`)
+    .bind(userId, captureId)
+    .all<Item>();
+  return res.results;
+}

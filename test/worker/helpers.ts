@@ -15,7 +15,9 @@ export function baseEnv(overrides: Partial<Record<keyof AppEnv, unknown>> = {}):
 
 export function deps(over: Partial<BotDeps> & { now?: number } = {}): BotDeps {
   const now = over.now ?? NOW;
-  return { clock: over.clock ?? { now: () => now }, rand: over.rand ?? (() => 0) };
+  return { clock: over.clock ?? { now: () => now }, rand: over.rand ?? (() => 0), ...(over.ai !== undefined ? { ai: over.ai } : {}),
+    ...(over.aiTimeoutMs !== undefined ? { aiTimeoutMs: over.aiTimeoutMs } : {}),
+  };
 }
 
 export interface TgCall {
