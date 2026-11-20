@@ -14,8 +14,11 @@ export async function healthResponse(env: AppEnv, clock: Clock): Promise<Respons
     const hb = await readHeartbeat(db, "cron");
     const pending = await queueSize(db);
     const ageMs = hb ? clock.now() - hb.last_run_at : null;
+    // 0.3.e: prod без пінгу монітора — «тихо живий» був би невидимий (НФ-6), тож ok:false, але 200.
+    const monitorMissing = env.ENV === "production" && (env.MONITOR_PING_URL ?? "").trim() === "";
     const body = {
-      ok: true,
+      ok: !monitorMissing,
+      ...(monitorMissing ? { monitor: "missing" } : {}),
       env: env.ENV ?? "unknown",
       sha: env.GIT_SHA && env.GIT_SHA.trim() !== "" ? env.GIT_SHA : "unknown",
       cron: {
