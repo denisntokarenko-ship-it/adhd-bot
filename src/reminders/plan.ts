@@ -119,7 +119,11 @@ export function shiftForQuiet(fireAt: number, user: QuietUser): number {
       const day = localDate(t, tz);
       // вікно через північ і ми в його вечірній частині → кінець тиші завтра; інакше — сьогодні
       const endDay = user.quiet_from > user.quiet_to && minute >= user.quiet_from ? shiftDate(day, 1) : day;
-      t = wallToUtc(endDay, user.quiet_to, tz);
+      let end = wallToUtc(endDay, user.quiet_to, tz);
+      // осінній перехід: `localToUtc` бере перше входження подвійної години; якщо ми вже в другому — кінець тиші
+      // вийшов би раніше за вхід. Тоді береться друге входження (+1 год), але не раніше за поточну мить (Д1 рев'ю 2.1).
+      if (end <= t) end = Math.max(end + 3_600_000, t + 1);
+      t = end;
       moved = true;
     }
     if (!moved) break;

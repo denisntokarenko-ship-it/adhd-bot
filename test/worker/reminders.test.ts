@@ -179,6 +179,18 @@ describe("S2.1 планувальник", () => {
     expect((await rows()).map((r) => r.status)).toEqual(["cancelled"]);
   });
 
+  it("В1 (рев'ю 2.1): захист в операторі — запис закрили між вибіркою й batch → schedule/planItem 0 рядків, planned_at не ставиться хибно", async () => {
+    const u = await user();
+    const row = [{ kind: "due" as const, fireAt: NOW + 60_000, maxAttempts: 1 }];
+    for (const status of ["done", "released"]) {
+      const i = await newItem(u, { dueAt: NOW + 60_000 });
+      await DB.prepare("UPDATE items SET status = ?, done_at = ? WHERE id = ?").bind(status, status === "done" ? NOW : null, i).run();
+      expect(await schedule(u, db(), i, row, now())).toBe(0);
+      expect(await planItem(u, db(), i, row, now())).toBe(0);
+    }
+    expect(await rows()).toHaveLength(0);
+  });
+
   it("2.1.h: ізоляція — чужий item_id не створює й не змінює нічого", async () => {
     const u = await user(111);
     const other = await user(222);

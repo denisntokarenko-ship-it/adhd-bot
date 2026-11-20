@@ -130,6 +130,16 @@ describe("S2.9 shiftForQuiet — «коли можна слати», за год
     expect(shiftForQuiet(at("2026-10-24T23:00:00Z"), quiet)).toBe(at("2026-10-25T06:00:00Z"));
   });
 
+  it("Д1 (рев'ю 2.1): кінець тиші о 03:xx у ніч осіннього переходу — не раніше за вхідну мить (друге входження 03:00–03:59)", () => {
+    const night = { tz: KYIV, quiet_from: 60, quiet_to: 210, pause_until: null }; // 01:00–03:30
+    // 25.10 03:15 удруге (EET, 01:15Z) — у тиші; кінець — 03:30 удруге = 01:30Z, а не 03:30 вперше (00:30Z, раніше за вхід)
+    expect(shiftForQuiet(at("2026-10-25T01:15:00Z"), night)).toBe(at("2026-10-25T01:30:00Z"));
+    // 03:15 вперше (EEST, 00:15Z) — кінець тиші 03:30 вперше = 00:30Z
+    expect(shiftForQuiet(at("2026-10-25T00:15:00Z"), night)).toBe(at("2026-10-25T00:30:00Z"));
+    // контракт «найраніша мить ≥ fireAt» на кожній хвилині ночі
+    for (let t = at("2026-10-24T22:00:00Z"); t < at("2026-10-25T03:00:00Z"); t += 60_000) expect(shiftForQuiet(t, night)).toBeGreaterThanOrEqual(t);
+  });
+
   it("пауза: до pause_until; пауза, що закінчується в тиші, → кінець тиші; рівні межі — тиші немає", () => {
     const pause = (until: string) => ({ ...quiet, pause_until: at(until) });
     expect(shiftForQuiet(at("2026-11-21T07:00:00Z"), pause("2026-11-21T08:00:00Z"))).toBe(at("2026-11-21T08:00:00Z"));
