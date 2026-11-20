@@ -1,0 +1,160 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/app.ts"
+old = '''if (given === null || !(await secretsEqual(given, expected))) return text(401, "");'''
+new = '''if (false) return text(401, "");'''
+why = "прибрати перевірку секрету вебхука -> має червоніти тест 401 (0.1.e)"
+
+[[mutant]]
+id = "M2"
+file = "src/db/users.ts"
+old = '''ON CONFLICT(tg_id) DO UPDATE SET last_seen_at = excluded.last_seen_at'''
+new = ''''''
+why = "upsert -> звичайний insert -> має червоніти тест «/start двічі» (0.1.b)"
+
+[[mutant]]
+id = "M3"
+file = "src/bot.ts"
+old = '''const db = openDb(env);'''
+new = '''const db = openDb(env); const leak = env.DB;'''
+why = "env.DB у src/bot.ts -> має червоніти тест-охоронець (0.4.c)"
+match = "0.4.c"
+
+[[mutant]]
+id = "M4"
+file = "src/app.ts"
+old = '''if (expected === undefined || expected.trim() === "") return text(401, "");'''
+new = ''''''
+why = "прибрати fail-closed для порожнього WEBHOOK_SECRET -> 0.1.g"
+
+[[mutant]]
+id = "M5"
+file = "src/texts.ts"
+old = '''if (i !== last) candidates.push(i);'''
+new = '''candidates.push(i);'''
+why = "варіант може повторитись підряд -> 0.1.d / pickVariant"
+
+[[mutant]]
+id = "M6"
+file = "src/health.ts"
+old = '''ageMs > STALE_AFTER_MS'''
+new = '''ageMs >= STALE_AFTER_MS'''
+why = "межа stale зсунута на 1 мс -> 0.2.c"
+
+[[mutant]]
+id = "M7"
+file = "src/bot.ts"
+old = '''    if (ctx.chat.type !== "private") return;
+    const fromId = ctx.from?.id;'''
+new = '''    const fromId = ctx.from?.id;'''
+why = "відповідати в групі -> 0.6.d"
+
+[[mutant]]
+id = "M8"
+file = "src/bot.ts"
+old = '''if (fromId === undefined || allowlist === null || !allowlist.has(fromId)) {
+      await ctx.reply(PRIVATE_BOT_TEXT);'''
+new = '''if (fromId === undefined || (allowlist !== null && !allowlist.has(fromId))) {
+      await ctx.reply(PRIVATE_BOT_TEXT);'''
+why = "порожній/зіпсований allowlist пускає всіх (fail-open) -> 0.6.b/0.6.c"
+
+# --- Виправлення за рев'ю 0.4: мутанти рецензента R1–R5, R7 і Д1/Д3. До виправлень усі вижили. ---
+
+[[mutant]]
+id = "R1a"
+file = "src/bot.ts"
+old = '''const db = openDb(env);'''
+new = '''const db = openDb(env); const { DB } = env; void DB;'''
+why = "деструктуризація біндингу поза src/db/ -> охоронець 0.4.c (В1)"
+match = "0.4.c"
+
+[[mutant]]
+id = "R1b"
+file = "src/bot.ts"
+old = '''const db = openDb(env);'''
+new = '''const db = openDb(env); if (update.update_id < 0) await db.d1.exec("DELETE FROM users");'''
+why = "пряма операція над users через db.d1 поза src/db/ -> охоронець 0.4.c (В1)"
+match = "0.4.c"
+
+[[mutant]]
+id = "R1c"
+file = "src/db/index.ts"
+old = '''readonly [brand]: true;'''
+new = '''readonly [brand]: true; readonly d1: NonNullable<AppEnv["DB"]>;'''
+why = "Db знову має публічне поле d1 -> typecheck: зайва директива @ts-expect-error (В1)"
+test = "npm run typecheck"
+match = "TS2578"
+
+[[mutant]]
+id = "R2a"
+file = "src/db/users.ts"
+old = '''export type VariantKind = "greet" | "soon";'''
+new = '''export type VariantKind = "greet" | "soon";
+export const listAll = async (db: Db) => d1Of(db).prepare("SELECT * FROM users").all();'''
+why = "експорт-стрілка без userId у users.ts -> 0.4.d (В2)"
+match = "0.4.d"
+
+[[mutant]]
+id = "R2b"
+file = "src/db/index.ts"
+old = '''export function openDb(env: AppEnv): Db {'''
+new = '''export async function allUsers(db: Db) { return db; }
+export function openDb(env: AppEnv): Db {'''
+why = "зайвий експорт без userId в index.ts (раніше весь файл був поза скан-ом) -> 0.4.d (В2)"
+match = "0.4.d"
+
+[[mutant]]
+id = "R3"
+file = "src/bot.ts"
+old = '''if (allowlist === null || !allowlist.has(fromId)) {'''
+new = '''if (false) {'''
+why = "callback_query від чужого проходить allowlist -> 0.6.a (В3)"
+match = "0.6.a"
+
+[[mutant]]
+id = "R4"
+file = "src/bot.ts"
+old = '''if (ctx.callbackQuery.message?.chat.type !== "private") return;'''
+new = ''''''
+why = "callback_query із групи обробляється -> 0.6.d (В3)"
+match = "0.6.d"
+
+[[mutant]]
+id = "R5"
+file = "src/texts.ts"
+old = '''// Індекс варіанта, що не збігається'''
+new = '''export const RECEIPT_POOL: readonly string[] = ["Ти знову забув", "Прострочено", "Провал"];
+
+// Індекс варіанта, що не збігається'''
+why = "новий пул із забороненими словами, якого немає в ручному списку -> НФ-4 (В4)"
+match = "НФ-4"
+
+[[mutant]]
+id = "R7"
+file = "scripts/set-webhook.mjs"
+old = '''export const ALLOWED_UPDATES = ["message", "callback_query"];'''
+# Токеноподібний рядок складено через `\` наприкінці рядка TOML: у самому файлі його немає (інакше він червонив би 0.5.c).
+new = """// default: 123456789:\
+AAHfakeTokenFakeTokenFakeToken12345
+export const ALLOWED_UPDATES = ["message", "callback_query"];"""
+why = "токеноподібний рядок у .mjs -> 0.5.c (В5)"
+match = "0.5.c"
+
+[[mutant]]
+id = "D1"
+file = "src/bot.ts"
+old = '''} finally {'''
+new = '''} catch (e) { throw e; } {'''
+why = "answerCallbackQuery не виконується, коли ensureUser кидає -> НФ-9 (Д1)"
+match = "НФ-9"
+
+[[mutant]]
+id = "D3"
+file = "scripts/set-webhook.mjs"
+old = '''if (info.last_error_message) problems.push('''
+new = '''if (false) problems.push('''
+why = "verifyWebhookInfo не бачить last_error_message -> тест scripts/set-webhook.mjs (Д3)"
+match = "verifyWebhookInfo"
