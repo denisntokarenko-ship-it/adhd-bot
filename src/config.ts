@@ -24,3 +24,16 @@ export async function secretsEqual(a: string, b: string): Promise<boolean> {
   for (let i = 0; i < va.length; i++) diff |= (va[i] ?? 0) ^ (vb[i] ?? 0);
   return diff === 0;
 }
+
+// Налаштування ШІ (НФ-5, «Контракт розбору»): значення за замовчуванням тут, змінні оточення лише перекривають.
+export const DEFAULT_AI_MODEL_PARSE = "claude-haiku-5-5";
+export const DEFAULT_AI_DAILY_LIMIT = 100;
+
+export function aiConfig(env: { AI_MODEL_PARSE?: string; AI_DAILY_LIMIT?: string }): { model: string; dailyLimit: number } {
+  const limit = Number(env.AI_DAILY_LIMIT);
+  return {
+    model: env.AI_MODEL_PARSE?.trim() || DEFAULT_AI_MODEL_PARSE,
+    // Сміття чи від'ємне в змінній — не «безліміт»: лишається безпечне значення за замовчуванням.
+    dailyLimit: Number.isInteger(limit) && limit >= 0 && env.AI_DAILY_LIMIT?.trim() ? limit : DEFAULT_AI_DAILY_LIMIT,
+  };
+}
