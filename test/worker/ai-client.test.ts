@@ -39,7 +39,7 @@ describe("createAiClient (SDK у workerd)", () => {
       },
     });
     const res = await client.complete(req());
-    expect(res).toEqual({ text: '{"items":[]}', stopReason: "end_turn", inputTokens: 11, outputTokens: 7 });
+    expect(res).toEqual({ text: '{"items":[]}', stopReason: "end_turn", inputTokens: 11, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 });
 
     expect(seen).toHaveLength(1);
     const { url, body, headers } = seen[0]!;
@@ -51,6 +51,18 @@ describe("createAiClient (SDK у workerd)", () => {
     expect(body.system).toEqual([{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }]);
     expect(body.messages).toEqual([{ role: "user", content: "USER" }]); // жодного assistant-prefill
     for (const k of ["temperature", "top_p", "top_k", "thinking", "tools"]) expect(body).not.toHaveProperty(k);
+  });
+
+  it("кеш: inputTokens — увесь промпт (звичайні + запис + читання), розбивка окремо", async () => {
+    const client = createAiClient("k", {
+      fetch: async () =>
+        reply(200, {
+          ...okMessage("{}"),
+          usage: { input_tokens: 70, output_tokens: 90, cache_creation_input_tokens: 0, cache_read_input_tokens: 600 },
+        }),
+    });
+    const res = await client.complete(req());
+    expect(res).toMatchObject({ inputTokens: 670, outputTokens: 90, cacheReadTokens: 600, cacheWriteTokens: 0 });
   });
 
   it.each([429, 500, 529])("HTTP %i → AiCallError http, без прихованих повторів SDK", async (status) => {

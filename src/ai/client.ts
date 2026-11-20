@@ -14,8 +14,13 @@ export interface AiRequest {
 export interface AiResponse {
   text: string; // перший text-блок; порожній, якщо його немає (refusal, max_tokens)
   stopReason: string | null;
+  // Увесь вхідний промпт: звичайні + записані в кеш + прочитані з кешу. Само `usage.input_tokens` API рахує лише
+  // НЕкешовану частину — з кешем сталого system воно вдесятеро менше за справжній промпт і вводило б в оману.
   inputTokens: number;
   outputTokens: number;
+  // Розбивка для точної вартості (кеш-читання ≈ 0.1×, кеш-запис ≈ 1.25× від ціни входу). У `ai_calls` не пишеться.
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
 }
 
 // Недоступність у «людських» категоріях: timeout — скасовано/завис, http — 4xx/429/5xx чи мережа.
@@ -59,12 +64,16 @@ export function createAiClient(apiKey: string, opts: { fetch?: typeof fetch } = 
           },
           { signal: req.signal },
         );
+        const cacheRead = msg.usage.cache_read_input_tokens ?? 0;
+        const cacheWrite = msg.usage.cache_creation_input_tokens ?? 0;
         const block = msg.content.find((b) => b.type === "text");
         return {
           text: block && block.type === "text" ? block.text : "",
           stopReason: msg.stop_reason,
-          inputTokens: msg.usage.input_tokens,
+          inputTokens: msg.usage.input_tokens + cacheWrite + cacheRead,
           outputTokens: msg.usage.output_tokens,
+          cacheReadTokens: cacheRead,
+          cacheWriteTokens: cacheWrite,
         };
       } catch (e) {
         if (e instanceof Anthropic.APIUserAbortError || e instanceof Anthropic.APIConnectionTimeoutError) {

@@ -27,10 +27,15 @@ export async function run(env: AppEnv, apiKey: string): Promise<void> {
   console.log(`ключ: довжина ${apiKey.length}, починається з «sk-ant-»: ${apiKey.startsWith("sk-ant-")}, без пробілів і переносів: ${apiKey === apiKey.trim() && !/\s/.test(apiKey)}`);
   const base = createAiClient(apiKey);
   // Діагностика: parseCapture ховає причину збою за fallback — тут друкуємо статус і тіло помилки API (без заголовків).
+  let cacheRead = 0;
+  let cacheWrite = 0;
   const client: AiClient = {
     async complete(req) {
       try {
-        return await base.complete(req);
+        const res = await base.complete(req);
+        cacheRead += res.cacheReadTokens;
+        cacheWrite += res.cacheWriteTokens;
+        return res;
       } catch (e) {
         if (e instanceof AiCallError) console.log(`  ! ${e.kind}${e.status === undefined ? "" : ` HTTP ${e.status}`}${e.detail ? ` — ${e.detail}` : ""}`);
         throw e;
@@ -48,7 +53,10 @@ export async function run(env: AppEnv, apiKey: string): Promise<void> {
   const rows = await env.DB!.prepare("SELECT ok, error, input_tokens AS i, output_tokens AS o FROM ai_calls WHERE user_id = ?1 ORDER BY id").bind(userId).all<{ ok: number; error: string | null; i: number; o: number }>();
   const inTok = rows.results.reduce((s, r) => s + r.i, 0);
   const outTok = rows.results.reduce((s, r) => s + r.o, 0);
-  const usd = (inTok * 0.1 + outTok * 0.5) / 1e6; // Haiku 5.5: $0.10 / $0.50 за 1M токенів (промпти ≤ 100K)
+  // ai_calls.input_tokens — увесь промпт (звичайні + кеш); розбивку на кеш беремо з відповідей API (обгортка вище).
+  const plain = inTok - cacheRead - cacheWrite;
+  // Haiku 5.5: $0.10 вхід, $0.50 вихід за 1M; кеш-читання 0.1× входу, кеш-запис 1.25× (5-хв TTL).
+  const usd = (plain * 0.1 + cacheRead * 0.01 + cacheWrite * 0.125 + outTok * 0.5) / 1e6;
   console.log(`ai_calls: ${rows.results.length} рядків, ok=${rows.results.filter((r) => r.ok === 1).length}, помилки=${JSON.stringify(rows.results.filter((r) => r.ok === 0).map((r) => r.error))}`);
-  console.log(`токени: input=${inTok}, output=${outTok}; вартість ≈ $${usd.toFixed(6)} (≈ $${(usd / rows.results.length).toFixed(6)} за виклик)`);
+  console.log(`токени: промпт=${inTok} (звичайні ${plain}, кеш-читання ${cacheRead}, кеш-запис ${cacheWrite}), output=${outTok}; вартість ≈ $${usd.toFixed(6)} (≈ $${(usd / rows.results.length).toFixed(6)} за виклик)`);
 }

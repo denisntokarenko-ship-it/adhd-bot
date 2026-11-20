@@ -43,6 +43,8 @@ function mock(
         stopReason: extra.stopReason === undefined ? "end_turn" : extra.stopReason,
         inputTokens: 120,
         outputTokens: 45,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
       };
     },
   };
