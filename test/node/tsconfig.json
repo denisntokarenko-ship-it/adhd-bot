@@ -13,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "allowJs": true
   },
-  "include": [".", "../../vitest.config.ts", "../../src/texts.ts", "../../src/config.ts"]
+  "include": [".", "../../vitest.config.ts", "../../src/texts/uk.ts", "../../src/texts/index.ts", "../../src/config.ts"]
 }

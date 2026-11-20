@@ -1,11 +1,11 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleRequest } from "../../src/app";
-import { GREET_POOL, PRIVATE_BOT_TEXT, SOON_POOL } from "../../src/texts";
+import { FALLBACK_POOL, GREET_POOL, PRIVATE_BOT_TEXT, UNSUPPORTED_POOL } from "../../src/texts";
 import { NOW, baseEnv, deps, mockTelegram, post, send, textUpdate, userRows } from "./helpers";
 
 beforeEach(async () => {
-  await env.DB!.prepare("DELETE FROM users").run();
+  for (const t of ["ai_calls", "items", "capture_fixes", "captures", "users"]) await env.DB!.prepare(`DELETE FROM ${t}`).run();
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -45,11 +45,11 @@ describe("S0.1 вебхук і /start", () => {
     expect(await userRows()).toHaveLength(1);
   });
 
-  it("0.1.c: довільний текст до /start теж створює рядок і відповідає «навчуся скоро»", async () => {
+  it("0.1.c: довільний текст до /start теж створює рядок (ШІ без ключа — запасна нотатка)", async () => {
     const tg = mockTelegram();
     await send(textUpdate("купити молоко"));
     expect(await userRows()).toHaveLength(1);
-    expect(SOON_POOL).toContain(tg.sent()[0]!.body.text);
+    expect(FALLBACK_POOL).toContain(tg.sent()[0]!.body.text);
   });
 
   it("0.1.d: два /start поспіль — різні вітання (індекс у БД, не в пам'яті isolate)", async () => {
@@ -212,7 +212,7 @@ describe("S0.7 стійкість вебхука", () => {
     expect(err).toHaveBeenCalled();
   });
 
-  it("0.7.c: стікер, фото і edited_message — 200, без відповіді й без запису", async () => {
+  it("0.7.c (S1.4.i): стікер і фото — коротка відповідь, edited_message — тиша; захоплень немає", async () => {
     const tg = mockTelegram();
     const base = { message_id: 1, date: 0, chat: { id: 111, type: "private" }, from: { id: 111, is_bot: false, first_name: "T" } };
     const updates = [
@@ -221,7 +221,10 @@ describe("S0.7 стійкість вебхука", () => {
       { update_id: 3, edited_message: { ...base, edit_date: 1, text: "/start" } },
     ];
     for (const u of updates) expect((await send(u)).status).toBe(200);
-    expect(tg.calls).toHaveLength(0);
-    expect(await userRows()).toHaveLength(0);
+    // стікер і фото — по одній короткій відповіді; edited_message ігнорується; нічого не збережено
+    expect(tg.sent()).toHaveLength(2);
+    for (const c of tg.sent()) expect(UNSUPPORTED_POOL).toContain(c.body.text);
+    expect((await env.DB!.prepare("SELECT COUNT(*) AS n FROM captures").first<{ n: number }>())!.n).toBe(0);
+    expect((await env.DB!.prepare("SELECT COUNT(*) AS n FROM items").first<{ n: number }>())!.n).toBe(0);
   });
 });

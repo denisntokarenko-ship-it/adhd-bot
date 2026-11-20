@@ -1,6 +1,6 @@
 // Розбір захоплення через Claude Haiku (крок 1.2). ШІ лише ПРОПОНУЄ JSON; тут код суворо валідує, нормалізує
 // й рахує дати (НФ-1, НФ-2). Усе, що не вийшло, — `{ fallback: true }`: запис не губиться (НФ-2, S1.5).
-import { countToday, log as logAiCall, type AiError } from "../db/aiCalls";
+import { countToday, log as logAiCall, type AiError, type AiPurpose } from "../db/aiCalls";
 import type { Db } from "../db/index";
 import { dayBounds, localIso, localToUtc, weekdayName } from "../time";
 import { AiCallError, type AiClient } from "./client";
@@ -39,6 +39,7 @@ export interface ParseContext {
   model: string;
   dailyLimit: number;
   source?: CaptureSource;
+  purpose?: AiPurpose; // 'parse' (за замовчуванням) або 'fix' — лише мітка в ai_calls
   captureId?: number | null;
   timeoutMs?: number;
 }
@@ -104,7 +105,7 @@ function noteFromText(text: string): ParsedItem {
 
 // ── розбір ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-export async function parseCapture(ctx: ParseContext, text: string): Promise<ParseOutcome> {
+export async function parseCapture(ctx: ParseContext, text: string, correction?: string): Promise<ParseOutcome> {
   const { client, db, userId, now, tz, model } = ctx;
 
   // НФ-5: ліміт рахується з ai_calls (усі purpose, успішні й ні). Вичерпано — виклику немає, як «ШІ недоступний».
@@ -116,6 +117,7 @@ export async function parseCapture(ctx: ParseContext, text: string): Promise<Par
     nowLocal: localIso(now, tz),
     tz,
     weekday: weekdayName(now, tz),
+    ...(correction === undefined ? {} : { correction }),
   });
 
   // Журнал виклику: лише лічильники й мітка (НФ-2). Збій журналу не має губити захоплення.
@@ -124,7 +126,7 @@ export async function parseCapture(ctx: ParseContext, text: string): Promise<Par
       await logAiCall(
         userId,
         db,
-        { model, purpose: "parse", ok, error, captureId: ctx.captureId ?? null, inputTokens: inTok, outputTokens: outTok },
+        { model, purpose: ctx.purpose ?? "parse", ok, error, captureId: ctx.captureId ?? null, inputTokens: inTok, outputTokens: outTok },
         now,
       );
     } catch {
