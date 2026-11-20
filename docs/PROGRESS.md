@@ -13,7 +13,7 @@
 | 0.3 | Інструменти й CI | Sonnet 5.5 | medium | `phase-0/03-ci` | ✅ | — |
 | 0.4 | Worker, оточення preview/prod і шар даних · 👤 · 🔒 | Opus 5.5 | high | `phase-0/04-worker-db` | ✅ | ✅ |
 | 0.5 | Cron-серце й зовнішній монітор · 👤 | Opus 5.5 | high | `phase-0/05-heartbeat` | ✅ | — |
-| R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | `review/phase-0` | ⬜ | ⬜ |
+| R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | `review/phase-0` | ✅ | ✅ |
 | 1.1 | Схема записів, FTS5 і шар даних · 🔒 | Opus 5.5 | high | `phase-1/01-items-data` | ⬜ | ⬜ |
 | 1.2 | Розбір запису через Claude Haiku | Opus 5.5 | high | `phase-1/02-ai-parse` | ⬜ | — |
 | 1.3 | Текстовий запис, квитанція й «не так» | Sonnet 5.5 | medium | `phase-1/03-capture-text` | ⬜ | — |
@@ -58,7 +58,9 @@
 
 ## Борг
 
-- `scripts/mutate.py` (S0.8.b, правило 9) у репозиторії ще немає — створити до першої мутаційної перевірки (0.4). (0.3)
+- Тест 0.3.f (збій додаткової роботи не валить прогін) — у 2.2, коли `processQueue` отримає тіло. (0.5)
+- Шви рев'ю Фази 0 (`docs/reviews/phase-0.md`, розд. 4): **2** — порядок параметрів `Db` різний (`users.ts` `(userId, …, db)`, `system.ts` `(db, key, now)`): у Фазі 1 обрати один стиль; **3** — `openDb(env)` двічі за прогін cron, `pingMonitor` може брати `db`; **4** — тест `parseAllowlist` у `tone.test.ts`; **5** — `catch` у `app.ts:39-45` розщепити в 1.3 (збій D1 на записі захоплення не має давати тихий 200); **6** — `processQueue` після `pingMonitor` у 2.1–2.2 (повільний монітор ≤ 5 с гальмує чергу); **8** — сканер 0.4.c лексичний (обчислений ключ `env["D"+"B"]` не бачить). (R-0)
+- Скрипта `npm run lint` немає — спека й CI не вимагають; вирішити у 0.3-подібному кроці, якщо знадобиться. 👤 звірити в BotFather `/setjoingroups → Disable`. (R-0)
 
 ## Рішення
 
@@ -78,6 +80,8 @@
 - **2026-11-20** `scheduled()` у `src/scheduled.ts` (`runScheduled(env, clock)`): (1) `heartbeat` upsert → (2) пінг лише якщо (1) вдався, таймаут 5 с через `AbortController`, URL — секрет, у лог не потрапляє (лише статус / ім'я помилки) → (3) `processQueue` у `try/catch` (порожній каркас, TODO 2.2). Збій запису серця не ловимо: прогін падає, пінгу немає, монітор б'є тривогу (0.3.d). `/health`: prod без `MONITOR_PING_URL` → `ok:false, monitor:"missing"`, 200 (0.2.f). `stale` вже був з 0.4. Тест 0.3.f (збій додаткової роботи) не написано: додаткової роботи ще немає, `processQueue` не підміняється — додасть 2.2. (0.5)
 - **2026-11-20** Як вимкнути cron на preview для живого доказу (0.5): ні відсутність `[triggers]`, ні `crons = []` (ні `wrangler triggers deploy` з порожнім списком) наявний розклад Cloudflare НЕ знімають — прогони йшли далі. Спрацювало: тимчасовий конфіг поза git з розкладом, що практично не спрацьовує (`crons = ["0 0 29 2 *"]`) і `wrangler deploy --config <тимчасовий> --env preview`; прогони стали після ~25 с затримки поширення. Перед відліком тривоги монітора звіряй `/health`: `age_s` росте > 120 с. Повернення — звичайний деплой із `wrangler.toml`. (0.5)
 
+- **2026-11-20** Виправлення R-0 (`fix/phase-0-review`): R3 — тест таймауту пінгу тепер «завислий» `fetch`, що відхиляється лише на `abort` (без `signal` прогін висить → червоний); R5 — `system.ts` у закритому списку імен `USERID_EXCEPTIONS`, виняток для цілого файлу (`SYSTEM_FILES`) прибрано; S0.8.b — `scripts/mutate.py` у репозиторії (копія скілового + відмова `git status --porcelain` непорожній / не git → вихід 2, без прапорця-обходу) і `test/node/mutate-script.test.ts`; посилання на скіловий скрипт у `docs/prompts/phase-*.md` замінено на `scripts/mutate.py`. Мутанти — `docs/mutants/fix-phase-0-review.md` (5/5 KILLED). (R-0)
+
 ## Нотатка для наступного кроку
 
-0.5 ✅. Наступний — R-0 (рев'ю Фази 0, `review/phase-0`). Живий доказ 0.3.g (preview): пінги щохвилини, останній OK 15:44 UTC, «15:49 up ➔ down», лист «DOWN | adhd-bot preview cron» 15:49:27 +0000, потім «UP» 16:00:26 +0000 (простій 10 хв 58 с); cron повернуто — `/health` `stale:false`, `last_ping_ok_at` оновлюється. `src/scheduled.ts`: `processQueue` — порожній каркас для 2.2; `src/db/system.ts`: `heartbeat`, `markPingOk`, `readHeartbeat`. Prod (3.3): окремий монітор і свій `MONITOR_PING_URL`, без нього `/health` дає `ok:false`. Борг: `scripts/mutate.py` у репо досі немає (ганяємо скіловий); тест 0.3.f — 2.2.
+R-0 ✅ (виправлення змерджено). **Диспетчер після мержу:** передеплоїти preview з `origin/main` (`wrangler deploy --env preview --var GIT_SHA:<sha>` з чистого дерева, cron лишається `* * * * *`) і звірити `/health.sha` = `origin/main` (0.5.e); до мержу preview стоїть на коміті гілки `fix/phase-0-review`. Наступний — 1.1 (`phase-1/01-items-data`, 🔒). Нові експорти в `src/db/system.ts` без `userId` червоніють, поки їх не вписано в `USERID_EXCEPTIONS` (`test/node/guard-lib.ts`). Мутації — лише `python scripts/mutate.py …` після коміту.
