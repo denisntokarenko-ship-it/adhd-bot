@@ -1,6 +1,6 @@
 // Живий прогін розбору (крок 1.2): справжній клієнт Claude, справжній код parseCapture, локальний D1 (Miniflare).
 // Збирається й запускається через scripts/live-parse.mjs. Ключ береться з env і ніде не друкується.
-import { createAiClient } from "../src/ai/client";
+import { AiCallError, createAiClient, type AiClient } from "../src/ai/client";
 import { parseCapture, type ParseOutcome } from "../src/ai/parse";
 import { aiConfig } from "../src/config";
 import { openDb } from "../src/db/index";
@@ -23,7 +23,20 @@ const show = (o: ParseOutcome) => JSON.stringify(o, (k, v) => (k === "dueAt" && 
 export async function run(env: AppEnv, apiKey: string): Promise<void> {
   const db = openDb(env);
   const { model, dailyLimit } = aiConfig(env);
-  const client = createAiClient(apiKey);
+  // Перевірка форми ключа без друку самого ключа: довжина й префікс (порожній/«System.Security.SecureString» видно одразу).
+  console.log(`ключ: довжина ${apiKey.length}, починається з «sk-ant-»: ${apiKey.startsWith("sk-ant-")}, без пробілів і переносів: ${apiKey === apiKey.trim() && !/\s/.test(apiKey)}`);
+  const base = createAiClient(apiKey);
+  // Діагностика: parseCapture ховає причину збою за fallback — тут друкуємо статус і тіло помилки API (без заголовків).
+  const client: AiClient = {
+    async complete(req) {
+      try {
+        return await base.complete(req);
+      } catch (e) {
+        if (e instanceof AiCallError) console.log(`  ! ${e.kind}${e.status === undefined ? "" : ` HTTP ${e.status}`}${e.detail ? ` — ${e.detail}` : ""}`);
+        throw e;
+      }
+    },
+  };
   const userId = (await ensureUser(999000001, db, NOW)).id; // тестовий tg id, не справжній користувач
   await env.DB!.prepare("DELETE FROM ai_calls WHERE user_id = ?1").bind(userId).run(); // чистий лічильник для цього прогону
   console.log(`модель: ${model}, ліміт: ${dailyLimit}\n`);

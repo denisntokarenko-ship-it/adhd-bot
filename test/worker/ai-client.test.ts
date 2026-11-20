@@ -68,6 +68,17 @@ describe("createAiClient (SDK у workerd)", () => {
     expect(calls).toBe(1);
   });
 
+  it("тіло помилки Anthropic потрапляє в detail (діагностика), без заголовків і ключа", async () => {
+    const client = createAiClient("sk-ant-secret-value", {
+      fetch: async () =>
+        reply(400, { type: "error", error: { type: "invalid_request_error", message: "output_config.format: bad schema" } }),
+    });
+    const err = (await client.complete(req()).catch((e) => e)) as AiCallError;
+    expect(err.status).toBe(400);
+    expect(err.detail).toBe("invalid_request_error: output_config.format: bad schema");
+    expect(err.detail).not.toContain("sk-ant-secret-value");
+  });
+
   it("мережа впала → http; сигнал скасовано → timeout", async () => {
     const down = createAiClient("k", {
       fetch: async () => {

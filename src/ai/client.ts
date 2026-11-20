@@ -23,6 +23,8 @@ export class AiCallError extends Error {
   constructor(
     readonly kind: "timeout" | "http",
     readonly status?: number,
+    // «тип: повідомлення» з тіла помилки Anthropic (для діагностики; без заголовків і без ключа). parse.ts його не логує.
+    readonly detail?: string,
   ) {
     super(`ai ${kind}${status === undefined ? "" : ` ${status}`}`);
   }
@@ -30,6 +32,13 @@ export class AiCallError extends Error {
 
 export interface AiClient {
   complete(req: AiRequest): Promise<AiResponse>;
+}
+
+// Тіло помилки API: { type: "error", error: { type, message } } → "invalid_request_error: …".
+function errorDetail(e: { error?: unknown }): string | undefined {
+  const inner = (e.error as { error?: { type?: unknown; message?: unknown } } | undefined)?.error;
+  if (!inner || typeof inner.message !== "string") return undefined;
+  return `${typeof inner.type === "string" ? inner.type : "error"}: ${inner.message}`.slice(0, 500);
 }
 
 export function createAiClient(apiKey: string, opts: { fetch?: typeof fetch } = {}): AiClient {
@@ -62,7 +71,7 @@ export function createAiClient(apiKey: string, opts: { fetch?: typeof fetch } = 
           throw new AiCallError("timeout");
         }
         if (req.signal.aborted) throw new AiCallError("timeout");
-        if (e instanceof Anthropic.APIError) throw new AiCallError("http", e.status);
+        if (e instanceof Anthropic.APIError) throw new AiCallError("http", e.status, errorDetail(e));
         throw new AiCallError("http");
       }
     },
