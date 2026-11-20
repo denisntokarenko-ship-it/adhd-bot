@@ -113,7 +113,7 @@ file = "src/ai/parse.ts"
 old = '''dueAt < dayBounds(tz, now)[0]'''
 new = '''dueAt < now'''
 why = "«цілий день сьогодні» вважається минулим (початок доби < now) -> червоніє «лише дата (all_day) сьогодні»"
-match = "лише дата (all_day) сьогодні"
+match = "лише дата .all_day. сьогодні"
 
 [[mutant]]
 id = "M15"
