@@ -52,6 +52,9 @@ export interface ItemPatch {
 const COLUMNS =
   "id, user_id, capture_id, kind, title, body, raw_text, source, due_at, all_day, priority, status, travel_min, created_at, done_at, snooze_count";
 
+// Ті самі колонки з префіксом `i.` для JOIN у `search` — рахуються один раз.
+const SEARCH_COLUMNS = COLUMNS.split(", ").map((c) => `i.${c}`).join(", ");
+
 // Білий список «поле патча → колонка»: імена колонок у SQL беруться лише звідси, ніколи з вхідних даних.
 const PATCH_COLUMNS: [keyof ItemPatch, string][] = [
   ["kind", "kind"],
@@ -130,7 +133,8 @@ export async function update(userId: number, db: Db, id: number, patch: ItemPatc
     .first<Item>();
 }
 
-// Зміна статусу. `done` ставить done_at = now (CHECK: done ⇔ done_at); open/released його знімають.
+// Зміна статусу. `done` ставить done_at = now (CHECK: done ⇔ done_at), а вже зроблений запис лишає перший done_at
+// (повторний клік «Зроблено» не зсуває момент — він потрібен очкам); open/released done_at знімають.
 // released — це відпущений, а не видалений запис: він лишається в базі й у пошуку.
 export async function setStatus(
   userId: number,
@@ -141,7 +145,7 @@ export async function setStatus(
 ): Promise<Item | null> {
   return d1Of(db)
     .prepare(
-      `UPDATE items SET status = ?3, done_at = CASE WHEN ?3 = 'done' THEN ?4 ELSE NULL END
+      `UPDATE items SET status = ?3, done_at = CASE WHEN ?3 = 'done' THEN COALESCE(done_at, ?4) ELSE NULL END
        WHERE id = ?1 AND user_id = ?2 RETURNING ${COLUMNS}`,
     )
     .bind(id, userId, status, now)
@@ -152,12 +156,9 @@ export async function setStatus(
 export async function search(userId: number, db: Db, query: string, limit = 20): Promise<Item[]> {
   const match = toMatchQuery(query);
   if (match === null) return [];
-  const cols = COLUMNS.split(", ")
-    .map((c) => `i.${c}`)
-    .join(", ");
   const res = await d1Of(db)
     .prepare(
-      `SELECT ${cols} FROM items_fts f JOIN items i ON i.id = f.rowid
+      `SELECT ${SEARCH_COLUMNS} FROM items_fts f JOIN items i ON i.id = f.rowid
        WHERE items_fts MATCH ?1 AND i.user_id = ?2
        ORDER BY f.rank, i.id LIMIT ?3`,
     )

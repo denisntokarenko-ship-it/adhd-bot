@@ -127,4 +127,28 @@ file = "migrations/0002_items.sql"
 old = '''BEGIN SELECT RAISE(ABORT, 'update is a fix'); END;'''
 new = '''BEGIN SELECT 1; END;'''
 why = "тригер «update_id уже виправлення» нічого не відхиляє -> червоніє 1.1.b capture_fixes"
-match = "capture_fixes: повтор update_id"
+match = "captures: update_id уже є в capture_fixes"
+
+[[mutant]]
+id = "M17"
+file = "migrations/0002_items.sql"
+old = '''length(title) BETWEEN 1 AND 200'''
+new = '''length(title) BETWEEN 1 AND 199'''
+why = "CHECK title звужено до 199 -> title рівно 200 (межа 1.2) не проходить -> червоніє тест межі title (мутант R4 рев'ю 1.1, В3)"
+match = "межа title"
+
+[[mutant]]
+id = "M18"
+file = "src/db/items.ts"
+old = '''THEN COALESCE(done_at, ?4) ELSE NULL END'''
+new = '''THEN ?4 ELSE NULL END'''
+why = "setStatus('done') на вже зробленому записі перезаписує done_at -> червоніє «повторне зроблено не зсуває done_at» (Д3 рев'ю 1.1)"
+match = "повторне «зроблено» не зсуває done_at"
+
+[[mutant]]
+id = "M19"
+file = "migrations/0002_items.sql"
+old = '''BEGIN SELECT RAISE(ABORT, 'update is a capture'); END;'''
+new = '''BEGIN SELECT 1; END;'''
+why = "тригер «update_id уже захоплення» нічого не відхиляє -> червоніє тест capture_fixes: update_id уже є в captures (зворотний до M16; після поділу Д4 вбивається окремим тестом)"
+match = "capture_fixes: update_id уже є в captures"

@@ -86,6 +86,11 @@ describe("S1.1.b: CHECK-и й UNIQUE відхиляють сміття (коже
     await insertAi({ ok: 0, error: "timeout" });
   });
 
+  it("межа title: рівно 200 символів проходить (1.2 обрізає до 200 з «…» — вужчий CHECK ламав би кожен довгий запис)", async () => {
+    await insertItem({ title: "я".repeat(200) });
+    await insertItem({ title: "я" }); // і нижня межа: 1 символ
+  });
+
   it.each([
     ["kind='todo'", { kind: "todo" }],
     ["title=''", { title: "" }],
@@ -128,19 +133,29 @@ describe("S1.1.b: CHECK-и й UNIQUE відхиляють сміття (коже
     await insertCapture({ source: "voice", raw_text: null, tg_file_id: "f1", status: "pending", next_try_at: 9 });
   });
 
-  it("ai_calls: ok=1 з error / ok=0 без error / purpose / error поза переліком", async () => {
-    await expect(insertAi({ ok: 1, error: "http" })).rejects.toThrow();
-    await expect(insertAi({ ok: 0 })).rejects.toThrow();
-    await expect(insertAi({ purpose: "chat" })).rejects.toThrow();
-    await expect(insertAi({ ok: 0, error: "oops" })).rejects.toThrow();
+  it.each([
+    ["ok=1 з error", { ok: 1, error: "http" }],
+    ["ok=0 без error", { ok: 0 }],
+    ["purpose поза переліком", { purpose: "chat" }],
+    ["error поза переліком", { ok: 0, error: "oops" }],
+  ])("ai_calls: %s", async (_name, over) => {
+    await expect(insertAi(over)).rejects.toThrow();
   });
 
-  it("capture_fixes: повтор update_id; update_id, що вже є в captures — і навпаки", async () => {
-    await insertCapture({ tg_update_id: 10 });
-    await insertFix({ tg_update_id: 50 });
-    await expect(insertFix({ tg_update_id: 50 })).rejects.toThrow(); // повтор у fixes
-    await expect(insertFix({ tg_update_id: 10 })).rejects.toThrow(); // уже захоплення
-    await expect(insertCapture({ tg_update_id: 50 })).rejects.toThrow(); // уже виправлення
+  describe("capture_fixes і captures ділять один простір update_id", () => {
+    beforeEach(async () => {
+      await insertCapture({ tg_update_id: 10 });
+      await insertFix({ tg_update_id: 50 });
+    });
+    it("capture_fixes: повтор update_id у fixes", async () => {
+      await expect(insertFix({ tg_update_id: 50 })).rejects.toThrow();
+    });
+    it("capture_fixes: update_id уже є в captures", async () => {
+      await expect(insertFix({ tg_update_id: 10 })).rejects.toThrow();
+    });
+    it("captures: update_id уже є в capture_fixes", async () => {
+      await expect(insertCapture({ tg_update_id: 50 })).rejects.toThrow();
+    });
   });
 });
 
@@ -316,16 +331,37 @@ describe("toMatchQuery", () => {
   });
 });
 
-describe("S1.1.f атомарність", () => {
-  it("batch: друга інструкція падає → немає й першої", async () => {
+describe("S1.1.f атомарність (частково: points_ledger з'явиться в 1.5)", () => {
+  const cap = (u: number) =>
+    DB.prepare("INSERT INTO captures (user_id, tg_update_id, source, raw_text, status, created_at) VALUES (?, 77, 'text', 'x', 'parsed', 1)").bind(u);
+  const item = (u: number, title: string) =>
+    DB.prepare("INSERT INTO items (user_id, kind, title, source, created_at) VALUES (?, 'note', ?, 'text', 1)").bind(u, title);
+  const count = async (t: string) => (await DB.prepare(`SELECT COUNT(*) AS n FROM ${t}`).first<{ n: number }>())!.n;
+
+  it("batch: друга інструкція падає → немає ні першої, ні тих, що йшли після неї", async () => {
     const u = await newUser(1);
-    await expect(
-      DB.batch([
-        DB.prepare("INSERT INTO captures (user_id, tg_update_id, source, raw_text, status, created_at) VALUES (?, 77, 'text', 'x', 'parsed', 1)").bind(u),
-        DB.prepare("INSERT INTO items (user_id, kind, title, source, created_at) VALUES (?, 'todo', 't', 'text', 1)").bind(u),
-      ]),
-    ).rejects.toThrow();
-    expect((await DB.prepare("SELECT COUNT(*) AS n FROM captures").first<{ n: number }>())!.n).toBe(0);
+    await expect(DB.batch([cap(u), item(u, "добрий"), item(u, ""), item(u, "хвіст")])).rejects.toThrow();
+    expect(await count("captures")).toBe(0);
+    expect(await count("items")).toBe(0); // ні «добрий» (до збою), ні «хвіст» (після)
+  });
+
+  it("контрольний: той самий batch без поганої інструкції зберігає все", async () => {
+    const u = await newUser(1);
+    await DB.batch([cap(u), item(u, "добрий"), item(u, "хвіст")]);
+    expect(await count("captures")).toBe(1);
+    expect(await count("items")).toBe(2);
+  });
+});
+
+describe("setStatus: done_at", () => {
+  it("повторне «зроблено» не зсуває done_at; open скидає, наступне done ставить заново", async () => {
+    const u = await newUser(1);
+    const it1 = await create(u, db(), note("зробити"), NOW);
+    const T = NOW + 1000;
+    expect((await setStatus(u, db(), it1.id, "done", T))!.done_at).toBe(T);
+    expect((await setStatus(u, db(), it1.id, "done", T + 300_000))!.done_at).toBe(T); // подвійний клік
+    expect((await setStatus(u, db(), it1.id, "open", T + 400_000))!.done_at).toBeNull();
+    expect((await setStatus(u, db(), it1.id, "done", T + 500_000))!.done_at).toBe(T + 500_000);
   });
 });
 
