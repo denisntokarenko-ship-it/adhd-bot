@@ -2,9 +2,11 @@
 import type { ParsedItem } from "./ai/parse";
 import type { Item } from "./db/items";
 import { localIso } from "./time";
-import { BTN_CLARIFY, BTN_WRONG, CLARIFY_QUESTION_HEAD, CLARIFY_QUESTION_TAIL, MORE_PREFIX, NO_DATE, clarifyReason } from "./texts";
+import { BTN_CLARIFY, HEARD_PREFIX, BTN_WRONG, CLARIFY_QUESTION_HEAD, CLARIFY_QUESTION_TAIL, MORE_PREFIX, NO_DATE, clarifyReason } from "./texts";
 
 export const TG_LIMIT = 4096;
+const HEARD_MAX = 500;
+const clip = (t: string, max: number) => (Array.from(t).length > max ? `${Array.from(t).slice(0, max - 1).join("")}…` : t);
 const ICON = { task: "☑️", note: "📝", event: "📅" } as const;
 
 // НФ-9: увесь текст користувача й ШІ екранується перед вставкою в HTML.
@@ -40,7 +42,14 @@ export interface Receipt {
 
 // Квитанція одним повідомленням (НФ-9: ≤ 4096, довший перелік — «…ще N»). Питання про дату — один рядок на захоплення
 // (S1.3.g): перелічує, до чого саме питає. Дані кнопок — `fix:<id>`, `clar:<id>` (≤ 64 байти).
-export function buildReceipt(intro: string, entries: ReceiptEntry[], captureId: number, tz: string, now: number): Receipt {
+export function buildReceipt(
+  intro: string,
+  entries: ReceiptEntry[],
+  captureId: number,
+  tz: string,
+  now: number,
+  heard?: string, // розпізнаний голос: показуємо курсивом, щоб помилку STT було видно (S1.7)
+): Receipt {
   const lines = entries.map((e) => {
     const when = e.dueAt === null ? NO_DATE : formatDue(e.dueAt, e.allDay, tz, now);
     return `${ICON[e.kind]} ${escapeHtml(e.title)} — ${when}`;
@@ -56,7 +65,8 @@ export function buildReceipt(intro: string, entries: ReceiptEntry[], captureId: 
     tail.push(`${CLARIFY_QUESTION_HEAD} ${what}. ${CLARIFY_QUESTION_TAIL}`);
   }
   const head = escapeHtml(intro);
-  const reserve = head.length + tail.join("\n").length + 40;
+  const heardLine = heard === undefined ? [] : [`${HEARD_PREFIX} <i>${escapeHtml(clip(heard, HEARD_MAX))}</i>`];
+  const reserve = head.length + heardLine.join("").length + tail.join("\n").length + 40;
   const shown: string[] = [];
   let used = reserve;
   for (const line of lines) {
@@ -67,5 +77,5 @@ export function buildReceipt(intro: string, entries: ReceiptEntry[], captureId: 
   if (shown.length < lines.length) shown.push(`${MORE_PREFIX} ${lines.length - shown.length}`);
   const buttons = [{ text: BTN_WRONG, data: `fix:${captureId}` }];
   if (asked.length > 0) buttons.push({ text: BTN_CLARIFY, data: `clar:${captureId}` });
-  return { text: [head, ...shown, ...tail].join("\n"), buttons };
+  return { text: [head, ...heardLine, ...shown, ...tail].join("\n"), buttons };
 }
