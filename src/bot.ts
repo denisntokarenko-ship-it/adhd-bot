@@ -3,7 +3,8 @@ import type { Update, UserFromGetMe } from "grammy/types";
 import type { Clock } from "./clock";
 import { aiConfig, parseAllowlist } from "./config";
 import { createAiClient, type AiClient } from "./ai/client";
-import { handleCallback, handleText, type CaptureDeps } from "./capture";
+import { handleCallback, handleText, handleVoice, type CaptureDeps } from "./capture";
+import { createStt, type Stt } from "./ai/stt";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
 import type { AppEnv } from "./env";
@@ -15,6 +16,7 @@ export interface BotDeps {
   rand: () => number;
   aiTimeoutMs?: number; // лише для тестів: таймаут ШІ (за замовчуванням 20 с, НФ-2)
   ai?: AiClient | null; // у тестах — мок; у проді створюється з ANTHROPIC_API_KEY (null — ключа немає)
+  stt?: Stt | null; // у тестах — мок; у проді — Whisper через біндинг env.AI (null — біндингу немає)
 }
 
 // getMe на кожен холодний старт ізолята — зайвий запит: id бота — це число перед «:» у токені.
@@ -47,10 +49,13 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
   const cfg = aiConfig(env);
   const apiKey = env.ANTHROPIC_API_KEY?.trim();
   const ai = deps.ai !== undefined ? deps.ai : apiKey ? createAiClient(apiKey) : null;
+  const stt = deps.stt !== undefined ? deps.stt : env.AI ? createStt(env.AI) : null;
   const captureDeps = (user: User): CaptureDeps => ({
     db,
     user,
     ai,
+    stt,
+    botToken: token,
     clock: deps.clock,
     rand: deps.rand,
     model: cfg.model,
@@ -77,7 +82,11 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
     }
     const user = await userOrRetry(fromId);
     const text = ctx.message.text;
-    if (START_RE.test(text)) {
+    if (ctx.message.forward_origin) {
+      // Переслане — дані, не команда: навіть «/start» чи «/today» у пересланому тексті стає записом (S1.8).
+      // forward_origin (ім'я/канал автора) далі не передається: у промпт і в БД іде лише текст (S1.8.d).
+      await handleText(ctx, captureDeps(user), "forward");
+    } else if (START_RE.test(text)) {
       await ctx.reply(await nextVariant(user, "greet", GREET_POOL, deps, db));
     } else if (COMMAND_RE.test(text)) {
       // Команди (/today, /foo…) — не захоплення: без запису й без ШІ (S1.4.f).
@@ -87,13 +96,20 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
     }
   });
 
-  // Фото, стікер тощо: коротка відповідь, нічого не зберігається (S1.4.i). Голос і пересилання — крок 1.4:
-  // до нього вони ігноруються, як і раніше.
+  // Голос і підпис пересланого — захоплення (кроки 1.7–1.8); фото, стікер тощо без підпису: коротка відповідь,
+  // нічого не зберігається (S1.4.i).
   bot.on("message", async (ctx) => {
-    if (ctx.chat.type !== "private" || ctx.message.voice || ctx.message.forward_origin) return;
+    if (ctx.chat.type !== "private") return;
     const fromId = ctx.from?.id;
     if (fromId === undefined || allowlist === null || !allowlist.has(fromId)) return;
-    await ctx.reply(UNSUPPORTED_POOL[pickVariant(UNSUPPORTED_POOL.length, null, deps.rand)] ?? "");
+    const forwarded = ctx.message.forward_origin !== undefined;
+    if (ctx.message.voice) {
+      await handleVoice(ctx, captureDeps(await userOrRetry(fromId)), forwarded ? "forward" : "voice");
+    } else if (forwarded && (ctx.message.caption ?? "").trim() !== "") {
+      await handleText(ctx, captureDeps(await userOrRetry(fromId)), "forward");
+    } else {
+      await ctx.reply(UNSUPPORTED_POOL[pickVariant(UNSUPPORTED_POOL.length, null, deps.rand)] ?? "");
+    }
   });
 
   // Кожен callback отримує відповідь у будь-якому разі (НФ-9); помилку D1 логує app.ts.

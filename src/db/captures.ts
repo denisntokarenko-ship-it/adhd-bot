@@ -1,4 +1,5 @@
 import { d1Of, type Db } from "./index";
+import { VOICE_PENDING_TITLE } from "../texts";
 import { insertStatement, type NewItem } from "./items";
 
 export type CaptureSource = "text" | "voice" | "forward";
@@ -9,7 +10,8 @@ export interface Capture {
   user_id: number;
   tg_update_id: number;
   source: CaptureSource;
-  raw_text: string | null;
+  raw_text: string | null; // NULL — голосове, яке ще не розпізнано (тоді є tg_file_id)
+  tg_file_id: string | null;
   status: CaptureStatus;
   parse_attempts: number;
   next_try_at: number | null;
@@ -20,7 +22,7 @@ export interface Capture {
 }
 
 const COLUMNS =
-  "id, user_id, tg_update_id, source, raw_text, status, parse_attempts, next_try_at, receipt_message_id, variant_idx, fix_requested_at, created_at";
+  "id, user_id, tg_update_id, source, raw_text, tg_file_id, status, parse_attempts, next_try_at, receipt_message_id, variant_idx, fix_requested_at, created_at";
 
 // «Оренда» нового захоплення (S1.4.c): якщо процес помре посеред виклику ШІ, після неї захоплення можна підібрати.
 export const LEASE_MS = 120_000;
@@ -51,17 +53,17 @@ export async function isKnownUpdate(userId: number, db: Db, tgUpdateId: number):
 export async function createPending(
   userId: number,
   db: Db,
-  input: { tgUpdateId: number; source: CaptureSource; rawText: string },
+  input: { tgUpdateId: number; source: CaptureSource; rawText: string | null; tgFileId?: string },
   now: number,
 ): Promise<Capture | null> {
   return d1Of(db)
     .prepare(
-      `INSERT INTO captures (user_id, tg_update_id, source, raw_text, status, next_try_at, created_at)
-       VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6)
+      `INSERT INTO captures (user_id, tg_update_id, source, raw_text, tg_file_id, status, next_try_at, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?7, 'pending', ?5, ?6)
        ON CONFLICT(user_id, tg_update_id) DO NOTHING
        RETURNING ${COLUMNS}`,
     )
-    .bind(userId, input.tgUpdateId, input.source, input.rawText, now + LEASE_MS, now)
+    .bind(userId, input.tgUpdateId, input.source, input.rawText, now + LEASE_MS, now, input.tgFileId ?? null)
     .first<Capture>();
 }
 
@@ -96,9 +98,11 @@ export async function saveFallback(
   variantIdx: number,
   now: number,
 ): Promise<void> {
+  // Голосове без розпізнавання (S1.7.d): тексту ще немає — запис-заглушка без raw_text, повтор STT — окремий крок.
   const raw = capture.raw_text ?? "";
   const flat = raw.replace(/\s+/g, " ").trim();
-  const title = Array.from(flat).slice(0, FALLBACK_TITLE_LEN).join("").trim() || "Нотатка";
+  const title =
+    capture.raw_text === null ? VOICE_PENDING_TITLE : Array.from(flat).slice(0, FALLBACK_TITLE_LEN).join("").trim() || "Нотатка";
   const d1 = d1Of(db);
   const attempts = reason === "limit" ? capture.parse_attempts : capture.parse_attempts + 1;
   await d1.batch([
@@ -113,7 +117,7 @@ export async function saveFallback(
         title,
         body: raw.length > 0 ? Array.from(raw).slice(0, 4000).join("") : null,
         captureId: capture.id,
-        rawText: raw,
+        rawText: capture.raw_text,
         source: capture.source,
       },
       now,

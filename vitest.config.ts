@@ -17,6 +17,9 @@ export default defineConfig({
           plugins: [
             cloudflareTest({
               wrangler: { configPath: "./wrangler.toml", environment: "preview" },
+              // Біндинг AI завжди віддалений (Workers AI): тестам він не потрібен — STT підміняється через deps.stt,
+              // а CI без облікових даних Cloudflare не мусить підіймати віддалену проксі-сесію.
+              remoteBindings: false,
               miniflare: {
                 bindings: {
                   TEST_MIGRATIONS: migrations,

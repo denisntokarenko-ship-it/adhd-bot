@@ -1,6 +1,7 @@
 // Тип оточення = згенероване `wrangler types` (worker-configuration.d.ts) + секрети й змінна деплою,
 // яких у wrangler.toml немає. Усе необов'язкове: відсутній секрет = fail-closed, а не падіння.
 export type AppEnv = Env & {
+  AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> }; // Workers AI (Whisper); у тестах підміняється через deps.stt
   BOT_TOKEN?: string;
   WEBHOOK_SECRET?: string;
   ALLOWED_TG_IDS?: string;

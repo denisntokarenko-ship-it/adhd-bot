@@ -16,6 +16,7 @@ export function baseEnv(overrides: Partial<Record<keyof AppEnv, unknown>> = {}):
 export function deps(over: Partial<BotDeps> & { now?: number } = {}): BotDeps {
   const now = over.now ?? NOW;
   return { clock: over.clock ?? { now: () => now }, rand: over.rand ?? (() => 0), ...(over.ai !== undefined ? { ai: over.ai } : {}),
+    ...(over.stt !== undefined ? { stt: over.stt } : {}),
     ...(over.aiTimeoutMs !== undefined ? { aiTimeoutMs: over.aiTimeoutMs } : {}),
   };
 }
@@ -26,10 +27,15 @@ export interface TgCall {
 }
 
 // Підміняє fetch: жодних реальних викликів Telegram (НФ-11). Записує кожен виклик API.
-export function mockTelegram(opts: { failSend?: boolean } = {}) {
+export function mockTelegram(opts: { failSend?: boolean; failDownload?: boolean } = {}) {
   const calls: TgCall[] = [];
   const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/file/bot")) {
+      // Скачування файлу голосового (S1.7): байти, не JSON; фіксуємо як «download».
+      calls.push({ method: "download", body: { url } });
+      return new Response(new Uint8Array([79, 103, 103, 83]), { status: opts.failDownload ? 500 : 200 });
+    }
     const m = /\/bot[^/]+\/(\w+)/.exec(url);
     const method = m?.[1] ?? "unknown";
     let body: Record<string, unknown> = {};
@@ -40,7 +46,12 @@ export function mockTelegram(opts: { failSend?: boolean } = {}) {
     }
     calls.push({ method, body });
     if (opts.failSend) throw new TypeError("network down");
-    const result = method === "sendMessage" ? { message_id: 1, date: 0, chat: { id: 1, type: "private" } } : true;
+    const result =
+      method === "sendMessage"
+        ? { message_id: 1, date: 0, chat: { id: 1, type: "private" } }
+        : method === "getFile"
+          ? { file_id: String(body.file_id), file_unique_id: "u", file_path: "voice/file_1.oga" }
+          : true;
     return new Response(JSON.stringify({ ok: true, result }), { headers: { "content-type": "application/json" } });
   });
   return { calls, spy, sent: () => calls.filter((c) => c.method === "sendMessage") };
@@ -61,6 +72,48 @@ export function textUpdate(text: string, opts: { from?: number; chatType?: strin
     },
   };
 }
+
+interface MsgOpts {
+  from?: number;
+  forward?: boolean; // переслано: forward_origin з іменем відправника (його не має бути в промпті)
+}
+
+function base(opts: MsgOpts) {
+  const from = opts.from ?? 111;
+  const id = ++updateId;
+  return {
+    update_id: id,
+    message: {
+      message_id: id,
+      date: 0,
+      chat: { id: from, type: "private" },
+      from: { id: from, is_bot: false, first_name: "T" },
+      ...(opts.forward
+        ? { forward_origin: { type: "user", date: 0, sender_user: { id: 999, is_bot: false, first_name: "Секретна", last_name: "Незнайомка" } } }
+        : {}),
+    },
+  };
+}
+
+export const voiceUpdate = (duration: number, opts: MsgOpts = {}) => {
+  const u = base(opts);
+  return { ...u, message: { ...u.message, voice: { file_id: "VOICE_FILE", file_unique_id: "u", duration, mime_type: "audio/ogg" } } };
+};
+export const forwardText = (text: string) => {
+  const u = base({ forward: true });
+  return { ...u, message: { ...u.message, text } };
+};
+export const photoUpdate = (opts: MsgOpts & { caption?: string } = {}) => {
+  const u = base(opts);
+  return {
+    ...u,
+    message: {
+      ...u.message,
+      photo: [{ file_id: "p", file_unique_id: "pu", width: 1, height: 1 }],
+      ...(opts.caption === undefined ? {} : { caption: opts.caption }),
+    },
+  };
+};
 
 export function post(update: unknown, secret: string | null = SECRET): Request {
   const headers: Record<string, string> = { "content-type": "application/json" };
