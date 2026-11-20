@@ -2,6 +2,7 @@ import type { Clock } from "./clock";
 import { openDb } from "./db/index";
 import { heartbeat, markPingOk } from "./db/system";
 import type { AppEnv } from "./env";
+import { processPending, type RetryDeps } from "./retry";
 
 export const PING_TIMEOUT_MS = 5_000;
 const KEY = "cron";
@@ -33,7 +34,8 @@ async function pingMonitor(env: AppEnv, clock: Clock): Promise<void> {
 
 // Одна хвилина роботи cron (НФ-6): (1) серце → (2) пінг лише після успішного (1) → (3) решта у try/catch.
 // Збій (1) НЕ ловимо: прогін падає, пінгу немає, монітор б'є тривогу.
-export async function runScheduled(env: AppEnv, clock: Clock): Promise<void> {
+// `deps` — лише для тестів (мок ШІ, STT); у проді cron бере ключі з оточення.
+export async function runScheduled(env: AppEnv, clock: Clock, deps: RetryDeps = {}): Promise<void> {
   const db = openDb(env);
   try {
     await heartbeat(db, KEY, clock.now());
@@ -43,11 +45,14 @@ export async function runScheduled(env: AppEnv, clock: Clock): Promise<void> {
   }
   await pingMonitor(env, clock);
   try {
-    await processQueue(env, clock);
+    await processQueue(env, clock, deps);
   } catch (err) {
     console.error("cron: extra work failed", err instanceof Error ? err.name : "unknown");
   }
 }
 
-// TODO(2.2): обробка черги нагадувань і відправка — крок 2.1–2.2. Тут навмисно порожньо.
-async function processQueue(_env: AppEnv, _clock: Clock): Promise<void> {}
+// (3) решта хвилини. Спершу повтор pending (S1.5.g: після серця й пінгу, не більше 3 захоплень, збій не гасить пінг);
+// TODO(2.2): обробка черги нагадувань і відправка — кроки 2.1–2.2 додадуть тут свій виклик.
+async function processQueue(env: AppEnv, clock: Clock, deps: RetryDeps): Promise<void> {
+  await processPending(env, clock, deps);
+}

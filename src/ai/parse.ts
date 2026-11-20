@@ -4,13 +4,13 @@ import { countToday, log as logAiCall, type AiError, type AiPurpose } from "../d
 import type { Db } from "../db/index";
 import { dayBounds, localIso, localToUtc, weekdayName } from "../time";
 import { AiCallError, type AiClient } from "./client";
+import { cleanBody, cleanTitle, noteFromText as noteOf } from "../note";
 import { buildPrompt, type CaptureSource } from "./prompt";
-import { BODY_MAX, PARSE_SCHEMA, TITLE_MAX, validateShape, type Kind, type Priority, type RawItem } from "./schema";
+import { PARSE_SCHEMA, TITLE_MAX, validateShape, type Kind, type Priority, type RawItem } from "./schema";
 
 export const AI_TIMEOUT_MS = 20_000;
 export const MAX_TOKENS = 4096;
 const MAX_AHEAD_MS = 731 * 86_400_000; // «не далі 2 років» (таблиця рішень S1.3)
-const FALLBACK_TITLE_LEN = 80;
 
 // Чому дату не збережено й про що треба спитати (одне повідомлення на захоплення, S1.3.g — це робить 1.3).
 export type Clarify = "unclear" | "event_no_date" | "past" | "bad_format" | "too_far";
@@ -51,19 +51,6 @@ const cut = (s: string, max: number, mark: string) => {
   return chars.length <= max ? s : chars.slice(0, max - mark.length).join("") + mark;
 };
 
-// Керуючі символи й нулі (крім \n, \t у body) — геть. У title рядки схлопуються в один.
-const CONTROL_KEEP_NL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
-
-function cleanTitle(s: string): string {
-  return s.replace(/[\r\n\t]+/g, " ").replace(CONTROL_KEEP_NL, "").trim();
-}
-
-function cleanBody(s: string | null): string | null {
-  if (s === null) return null;
-  const t = s.replace(/\r\n?/g, "\n").replace(CONTROL_KEEP_NL, "").trim();
-  return t === "" ? null : Array.from(t).slice(0, BODY_MAX).join("");
-}
-
 // ── правила дати (таблиця рішень S1.3, НФ-1) ───────────────────────────────────────────────────────────────
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -96,11 +83,9 @@ function toParsed(raw: RawItem, now: number, tz: string): ParsedItem | null {
   return { kind: raw.kind, title, body: cleanBody(raw.body), priority: raw.priority, ...d };
 }
 
-// Порожній `items` — не помилка: з тексту виходить одна нотатка (перші ~80 символів).
+// Порожній `items` — не помилка: з тексту виходить одна нотатка (заголовок — перші ~80 символів, `src/note.ts`).
 function noteFromText(text: string): ParsedItem {
-  const flat = cleanTitle(text);
-  const title = Array.from(flat).slice(0, FALLBACK_TITLE_LEN).join("").trim() || "Нотатка";
-  return { kind: "note", title, body: null, dueAt: null, allDay: false, priority: "normal", clarify: null };
+  return { kind: "note", title: noteOf(text).title, body: null, dueAt: null, allDay: false, priority: "normal", clarify: null };
 }
 
 // ── розбір ──────────────────────────────────────────────────────────────────────────────────────────────────

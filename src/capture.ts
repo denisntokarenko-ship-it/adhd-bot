@@ -1,6 +1,6 @@
 // Текстове захоплення (крок 1.3): повідомлення → захоплення (pending, до ШІ) → розбір → записи → квитанція.
 // «Не так»/«Уточнити» → наступне повідомлення перерозбирає оригінал разом з виправленням (S1.6).
-import type { Context } from "grammy";
+import type { Api, Context } from "grammy";
 import { MAX_VOICE_SECONDS, MIN_TEXT_CHARS, downloadTelegramFile, type Stt } from "./ai/stt";
 import type { AiClient } from "./ai/client";
 import { parseCapture, type ParseContext, type ParseOutcome, type ParsedItem } from "./ai/parse";
@@ -41,7 +41,7 @@ import { dayBounds } from "./time";
 // Стан очікування — у БД (`captures.fix_requested_at`), а не в KV: див. «Рішення» в docs/PROGRESS.md.
 export const FIX_WINDOW_MS = 10 * 60_000;
 
-// Затримки повторів після невдалої спроби n (S1.5.b): [n-1]; після 6-ї невдачі — gave_up (S1.5, поза 1.3).
+// Затримки повторів після невдалої спроби n (S1.5.b): [n-1]; після 6-ї невдачі — gave_up (рішення приймає `src/retry.ts`).
 export const RETRY_DELAYS_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000, 3 * 3_600_000, 6 * 3_600_000] as const;
 export function retryDelay(attemptsAfterFailure: number): number {
   const i = Math.min(Math.max(attemptsAfterFailure, 1), RETRY_DELAYS_MS.length) - 1;
@@ -61,7 +61,7 @@ export interface CaptureDeps {
   timeoutMs?: number;
 }
 
-const toNew = (p: ParsedItem) => ({
+export const toNew = (p: ParsedItem) => ({
   kind: p.kind,
   title: p.title,
   body: p.body,
@@ -70,7 +70,7 @@ const toNew = (p: ParsedItem) => ({
   priority: p.priority,
 });
 
-const entryOf = (p: ParsedItem): ReceiptEntry => ({
+export const entryOf = (p: ParsedItem): ReceiptEntry => ({
   kind: p.kind,
   title: p.title,
   dueAt: p.dueAt,
@@ -78,13 +78,13 @@ const entryOf = (p: ParsedItem): ReceiptEntry => ({
   clarify: p.clarify,
 });
 
-const pick = (pool: readonly string[], last: number | null, rand: () => number) => {
+export const pick = (pool: readonly string[], last: number | null, rand: () => number) => {
   const idx = pickVariant(pool.length, last, rand);
   return { idx, text: pool[idx] ?? pool[0] ?? "" };
 };
 
 // Розбір, що не кидає: будь-який збій (включно з D1 під час підрахунку ліміту) — «недоступний» → запасний шлях.
-async function runParse(
+export async function runParse(
   d: CaptureDeps,
   now: number,
   cap: Capture,
@@ -243,6 +243,20 @@ export async function handleText(ctx: Context, d: CaptureDeps, source: "text" | 
   return handleCaptured(ctx, d, text, updateId, { source });
 }
 
+// getFile → байти → Whisper. null — не вдалося (немає біндингу, збій Telegram чи Whisper): виклик іде запасним шляхом.
+// Спільне для живого голосового (handleVoice) і cron-повтору (src/retry.ts, S1.7.d).
+export async function transcribeVoice(api: Api, d: CaptureDeps, fileId: string): Promise<string | null> {
+  if (d.stt === null) return null;
+  try {
+    const file = await api.getFile(fileId);
+    if (file.file_path === undefined) return null;
+    return (await d.stt.transcribe(await downloadTelegramFile(d.botToken, file.file_path))).trim();
+  } catch {
+    console.error("stt failed"); // без токена, id файлу й тексту
+    return null;
+  }
+}
+
 // Голосове (S1.7) і переслане голосове (S1.8.e, source='forward'): getFile → Whisper → той самий шлях, що в тексту.
 export async function handleVoice(ctx: Context, d: CaptureDeps, source: "voice" | "forward"): Promise<void> {
   const voice = ctx.message?.voice;
@@ -254,17 +268,7 @@ export async function handleVoice(ctx: Context, d: CaptureDeps, source: "voice" 
   if (voice.duration <= 0) return void (await ctx.reply(pick(VOICE_EMPTY_POOL, null, d.rand).text));
   if (voice.duration > MAX_VOICE_SECONDS) return void (await ctx.reply(pick(VOICE_TOO_LONG_POOL, null, d.rand).text));
 
-  let heard: string | null = null; // null — STT не вдався; "" — вдався, але тиша
-  if (d.stt !== null) {
-    try {
-      const file = await ctx.api.getFile(voice.file_id);
-      if (file.file_path !== undefined) {
-        heard = (await d.stt.transcribe(await downloadTelegramFile(d.botToken, file.file_path))).trim();
-      }
-    } catch {
-      console.error("stt failed"); // без токена, id файлу й тексту
-    }
-  }
+  const heard = await transcribeVoice(ctx.api, d, voice.file_id); // null — STT не вдався; "" — вдався, але тиша
 
   if (heard === null) {
     // Не втратити запис (НФ-5): захоплення без тексту + запасна нотатка. Виправлення («Не так») без STT — «лишив як було».
