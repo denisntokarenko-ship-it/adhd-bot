@@ -76,13 +76,13 @@ match = 'ліміт доби'
 [[mutant]]
 id = "N6"
 file = "src/db/captures.ts"
-old = '''    d1.prepare("DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'").bind(userId, capture.id),
+old = '''d1.prepare("DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'").bind(userId, capture.id),
     d1
       .prepare(
-        "UPDATE captures SET status = 'parsed\''''
-new = '''    d1
+        "UPDATE captures SET status = 'parsed''''
+new = '''d1
       .prepare(
-        "UPDATE captures SET status = 'parsed\''''
+        "UPDATE captures SET status = 'parsed''''
 why = "успішний повтор не видаляє запасну нотатку — у людини дубль (S1.5.d)"
 match = '1\.5\.d'
 
