@@ -22,6 +22,7 @@ describe("S0.4 міграція 0001", () => {
     expect(await names("SELECT name FROM pragma_table_info('users') ORDER BY cid")).toEqual([
       "id", "tg_id", "tz", "quiet_from", "quiet_to", "morning_at", "evening_at", "weekly_dow",
       "pause_until", "greet_variant_idx", "soon_variant_idx", "created_at", "last_seen_at", "today_variant_idx", // 0003: ALTER TABLE ADD COLUMN — у кінці
+      "ack_ok_idx", "ack_later_idx", "ack_rel_idx", "ack_pause_idx", "ack_resume_idx", "ack_travel_idx", // 0004 (S2.10.b)
     ]);
     expect(await names("SELECT name FROM pragma_table_info('heartbeat') ORDER BY cid")).toEqual([
       "key", "last_run_at", "last_ping_ok_at",
