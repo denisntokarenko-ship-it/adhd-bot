@@ -1,0 +1,84 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/db/captures.ts"
+old = "DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND status = 'open'"
+new = "DELETE FROM items WHERE user_id = ?1 AND capture_id = ?2 AND 0 = 1"
+why = "«не так» не видаляє старі записи -> дублює -> червоніє «виправлення ЗАМІНЮЄ записи»"
+match = "виправлення ЗАМІНЮЄ записи"
+
+[[mutant]]
+id = "M2"
+file = "src/db/captures.ts"
+old = "fix_requested_at >= ?2 AND status = 'parsed'"
+new = "?2 IS NOT NULL AND status = 'parsed'"
+why = "вікно «не так» не обмежене в часі -> старе очікування ловить звичайне повідомлення -> червоніє «вікно минуло»"
+match = "вікно минуло"
+
+[[mutant]]
+id = "M3"
+file = "src/db/captures.ts"
+old = '''fix_requested_at >= ?2 AND'''
+new = '''fix_requested_at > ?2 AND'''
+why = "межа вікна ≥ → > : рівно 10 хв уже не виправлення -> червоніє «рівно на межі вікна»"
+match = "рівно на межі вікна"
+
+[[mutant]]
+id = "M4"
+file = "src/capture.ts"
+old = '''  if (await isKnownUpdate(d.user.id, d.db, updateId)) return; // НФ-7, S1.6.i: до ШІ'''
+new = '''  if (false) return;'''
+why = "дубль update-виправлення розпізнається лише після ШІ -> червоніє «повторна доставка update-виправлення»"
+match = "повторна доставка update-виправлення"
+
+[[mutant]]
+id = "M5"
+file = "src/db/captures.ts"
+old = '''const attempts = reason === "limit" ? capture.parse_attempts : capture.parse_attempts + 1;'''
+new = '''const attempts = capture.parse_attempts + 1;'''
+why = "ліміт доби витрачає спробу -> червоніє «спроба не витрачена»"
+match = "ліміт доби вичерпано"
+
+[[mutant]]
+id = "M6"
+file = "src/capture.ts"
+old = '''  const out = await runParse(d, now, cap, "parse");
+  if (out.fallback) return fallbackReply(ctx, d, cap, out.reason, last, now);'''
+new = '''  const out = await runParse(d, now, cap, "parse");
+  if (out.fallback) return;'''
+why = "при збої ШІ запасна нотатка не зберігається -> запис губиться -> червоніє «збій ШІ → запасна нотатка»"
+match = "збій ШІ → запасна нотатка"
+
+[[mutant]]
+id = "M7"
+file = "src/format.ts"
+old = '''return `${ICON[e.kind]} ${escapeHtml(e.title)} — ${when}`;'''
+new = '''return `${ICON[e.kind]} ${e.title} — ${when}`;'''
+why = "заголовок не екранується -> червоніє «HTML екранується»"
+match = "HTML екранується"
+
+[[mutant]]
+id = "M8"
+file = "src/format.ts"
+old = '''const diff = Math.round((dayNum(due) - dayNum(cur)) / 86_400_000);'''
+new = '''const diff = Math.round((dayNum(due) - Math.floor(now / 86_400_000) * 86_400_000) / 86_400_000);'''
+why = "«сьогодні» за UTC-датою замість tz -> о 00:30 за Києвом не «сьогодні» -> червоніє 1.3.f"
+match = "о 00:30 за Києвом"
+
+[[mutant]]
+id = "M9"
+file = "src/app.ts"
+old = '''if ((err instanceof BotError ? err.error : err) instanceof RetryableError) return text(500, "");'''
+new = '''if (false) return text(500, "");'''
+why = "збій D1 на захопленні дає тихий 200 -> повторної доставки немає -> червоніє 1.4.h"
+match = "D1 кидає на вставці захоплення"
+
+[[mutant]]
+id = "M10"
+file = "src/db/captures.ts"
+old = '''AND id <> ?2 AND fix_requested_at IS NOT NULL")'''
+new = '''AND id <> ?2 AND 0 = 1")'''
+why = "очікування «не так» на старішому захопленні не знімається -> лишається кілька активних; тест потребує одного"
+match = "очікування лише на одному захопленні"

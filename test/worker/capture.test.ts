@@ -333,6 +333,18 @@ describe("S1.6 «Не так»", () => {
     expect(await count("captures")).toBe(1);
   });
 
+  it("очікування лише на одному захопленні: «Не так» на новішому знімає його зі старішого", async () => {
+    const tg = mockTelegram();
+    const a = await firstCapture(tg);
+    await send(callback(`fix:${a}`), baseEnv(), d(null, FRI + MIN));
+    await send(textUpdate("ще одне"), baseEnv(), { ...d(replyWith(FOOD).client, FRI + 30 * MIN) }); // вікно першого минуло → нове захоплення
+    const b = (await rows<{ id: number }>("SELECT id FROM captures ORDER BY id DESC LIMIT 1"))[0]!.id;
+    expect(b).not.toBe(a);
+    await send(callback(`fix:${b}`, 111, 7003), baseEnv(), d(null, FRI + 31 * MIN));
+    const st = await rows<{ id: number; fix_requested_at: number | null }>("SELECT id, fix_requested_at FROM captures ORDER BY id");
+    expect(st.filter((c) => c.fix_requested_at !== null).map((c) => c.id)).toEqual([b]);
+  });
+
   it("«Уточнити» веде в те саме виправлення, з іншим запитом", async () => {
     const tg = mockTelegram();
     const id = await firstCapture(tg);
