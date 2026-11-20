@@ -1,6 +1,6 @@
 import type { Clock } from "./clock";
 import { openDb } from "./db/index";
-import { countPending, readHeartbeat } from "./db/system";
+import { countDueReminders, countPending, readHeartbeat } from "./db/system";
 import type { AppEnv } from "./env";
 
 export const STALE_AFTER_MS = 180_000;
@@ -13,6 +13,7 @@ export async function healthResponse(env: AppEnv, clock: Clock): Promise<Respons
     const db = openDb(env);
     const hb = await readHeartbeat(db, "cron");
     const pending = await countPending(db);
+    const due = await countDueReminders(db, clock.now());
     const ageMs = hb ? clock.now() - hb.last_run_at : null;
     // 0.3.e: prod без пінгу монітора — «тихо живий» був би невидимий (НФ-6), тож ok:false, але 200.
     const monitorMissing = env.ENV === "production" && (env.MONITOR_PING_URL ?? "").trim() === "";
@@ -27,6 +28,7 @@ export async function healthResponse(env: AppEnv, clock: Clock): Promise<Respons
         stale: ageMs === null ? true : ageMs > STALE_AFTER_MS,
       },
       queue: { pending },
+      reminders: { due },
     };
     return new Response(JSON.stringify(body), { status: 200, headers: HEADERS });
   } catch (err) {

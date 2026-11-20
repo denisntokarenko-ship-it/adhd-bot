@@ -9,6 +9,13 @@ export const MAX_ATTEMPTS_ESCALATING = 4; // important і leave_now
 export const LATE_MS = 5 * MIN; // «запізніле»: fire_at ≤ now − LATE_MS
 export const LEASE_MS = 120_000; // оренда рядка під час відправки
 export const CLAIM_LIMIT = 50; // рядків за прогін на всіх
+export const STALE_MS = 48 * 3_600_000; // старше — мовчки cancelled (без повідомлень)
+export const RUN_BUDGET_MS = 40_000; // після цього прогін нових відправок не починає
+export const PUSH_SINGLE_PER_HOUR = 6; // окремих повідомлень на ковзну годину
+export const PUSH_SUMMARY_PER_HOUR = 1; // зведень на ковзну годину
+export const SUMMARY_LINES = 5; // рядків у зведенні, решта — кнопкою
+export const DONE_POINTS = 10; // очки ✅ (S2.4.a)
+export const HOUR_MS = 3_600_000;
 export const PLAN_LIMIT = 50; // записів за тик планувальника
 export const EVE_AT_MIN = 20 * 60; // «навечір» — 20:00 попереднього дня
 export const EVE_MIN_LEAD_MS = 5 * MIN; // eve_before лише якщо ще попереду більш ніж на 5 хв
@@ -129,4 +136,52 @@ export function shiftForQuiet(fireAt: number, user: QuietUser): number {
     if (!moved) break;
   }
   return t;
+}
+
+export type SnoozeAction = "s15" | "s60" | "tom";
+
+// Куди ⏰ переносить нагадування (S2.4.e–g): +15 хв, +1 год або «завтра» = `morning_at` НАСТУПНОЇ ЛОКАЛЬНОЇ доби
+// (о 00:30 суботи «завтра» — неділя, а не сьогодні о 09:00). Доба — у `tz`, не в UTC.
+export function snoozeAt(action: SnoozeAction, now: number, user: PlanUser): number {
+  if (action === "s15") return now + 15 * MIN;
+  if (action === "s60") return now + 60 * MIN;
+  return wallToUtc(shiftDate(localDate(now, user.tz), 1), user.morning_at, user.tz);
+}
+
+export interface BatchRow {
+  id: number;
+  fireAt: number;
+  important: boolean;
+  parentSentAs: "single" | "summary" | null; // як пішов батько повтору; null — не повтор
+}
+
+export interface BatchCtx {
+  now: number;
+  singlesLastHour: number; // окремих пушів за ковзну годину
+  summariesLastHour: number; // зведень за ковзну годину (різні tg_message_id)
+}
+
+export interface BatchPlan {
+  singles: BatchRow[];
+  summary: BatchRow[]; // порожній — зведення немає
+  wait: BatchRow[]; // лишаються pending, спроба не витрачена
+}
+
+// Добір для одного користувача (S2.6, чиста функція). Рядки впорядковано: important перед normal, далі fire_at, id.
+// 1) ≥ 2 «запізнілих» (fire_at ≤ now − LATE_MS) АБО ≥ 2 повторів, чий батько пішов зведенням → усе, що зараз у черзі,
+//    одним зведенням (пуш слідом за зведенням — шум); зведення в останню годину вже було → усе чекає;
+// 2) інакше окремо, поки не вичерпано PUSH_SINGLE_PER_HOUR; 3) що не влізло → одне зведення, якщо вікно вільне.
+export function selectBatch(rows: BatchRow[], ctx: BatchCtx): BatchPlan {
+  const sorted = [...rows].sort((a, b) => Number(b.important) - Number(a.important) || a.fireAt - b.fireAt || a.id - b.id);
+  const summaryFree = ctx.summariesLastHour < PUSH_SUMMARY_PER_HOUR;
+  const late = sorted.filter((r) => r.fireAt <= ctx.now - LATE_MS).length;
+  const fromSummary = sorted.filter((r) => r.parentSentAs === "summary").length;
+  if (late >= 2 || fromSummary >= 2) {
+    return summaryFree ? { singles: [], summary: sorted, wait: [] } : { singles: [], summary: [], wait: sorted };
+  }
+  const room = Math.max(0, PUSH_SINGLE_PER_HOUR - ctx.singlesLastHour);
+  const singles = sorted.slice(0, room);
+  const rest = sorted.slice(room);
+  if (rest.length === 0) return { singles, summary: [], wait: [] };
+  return summaryFree ? { singles, summary: rest, wait: [] } : { singles, summary: [], wait: rest };
 }

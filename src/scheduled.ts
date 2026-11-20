@@ -2,6 +2,7 @@ import type { Clock } from "./clock";
 import { openDb } from "./db/index";
 import { heartbeat, markPingOk } from "./db/system";
 import type { AppEnv } from "./env";
+import { dispatchReminders } from "./reminders/dispatch";
 import { planReminders } from "./reminders/planner";
 import { processPending, type RetryDeps } from "./retry";
 
@@ -55,12 +56,17 @@ export async function runScheduled(env: AppEnv, clock: Clock, deps: RetryDeps = 
 // (3) решта хвилини (S2.3): нагадування → підбір pending-захоплень. Нагадування першими: підбір робить до 3
 // довгих викликів ШІ/STT, а нагадування найчутливіші до часу. Кожна частина у своєму try/catch: збій
 // планувальника не зупиняє підбір pending (і навпаки), пінг уже пішов.
-// TODO(2.2): після планувальника — оренда (`claimDueReminders`), відправка й закриття рядків.
 async function processQueue(env: AppEnv, clock: Clock, deps: RetryDeps): Promise<void> {
   try {
     await planReminders(openDb(env), clock.now());
   } catch (err) {
     console.error("cron: reminders failed", err instanceof Error ? err.name : "unknown");
+  }
+  // Відправка: STALE → тиша → оренда → добір → відправка → закриття (S2.3). Свій try/catch: збій відправки не гасить підбір.
+  try {
+    await dispatchReminders(env, clock, deps.rand === undefined ? {} : { rand: deps.rand });
+  } catch (err) {
+    console.error("cron: dispatch failed", err instanceof Error ? err.name : "unknown");
   }
   await processPending(env, clock, deps);
 }

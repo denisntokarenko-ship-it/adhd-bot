@@ -43,3 +43,36 @@ export async function setVariantIdx(userId: number, kind: VariantKind, idx: numb
   }[kind];
   await d1Of(db).prepare(sql).bind(userId, idx).run();
 }
+
+// Параметри доставки нагадувань: чат, пояс і година «завтра» (S2.4.e). Окремо від `User`, щоб не роздувати його.
+export interface Delivery {
+  tg_id: number;
+  tz: string;
+  morning_at: number;
+}
+
+export async function getDelivery(userId: number, db: Db): Promise<Delivery | null> {
+  return d1Of(db).prepare("SELECT tg_id, tz, morning_at FROM users WHERE id = ?1").bind(userId).first<Delivery>();
+}
+
+export type AckKind = "ok" | "later" | "rel";
+
+// Пам'ять варіанта підтверджень — колонка на пул (НФ-4, S2.10.b): інакше ✅ → ⏰ → ✅ повторив би текст.
+export async function getAckIdx(userId: number, kind: AckKind, db: Db): Promise<number | null> {
+  const sql = {
+    ok: "SELECT ack_ok_idx AS idx FROM users WHERE id = ?1",
+    later: "SELECT ack_later_idx AS idx FROM users WHERE id = ?1",
+    rel: "SELECT ack_rel_idx AS idx FROM users WHERE id = ?1",
+  }[kind];
+  const row = await d1Of(db).prepare(sql).bind(userId).first<{ idx: number | null }>();
+  return row?.idx ?? null;
+}
+
+export async function setAckIdx(userId: number, kind: AckKind, idx: number, db: Db): Promise<void> {
+  const sql = {
+    ok: "UPDATE users SET ack_ok_idx = ?2 WHERE id = ?1",
+    later: "UPDATE users SET ack_later_idx = ?2 WHERE id = ?1",
+    rel: "UPDATE users SET ack_rel_idx = ?2 WHERE id = ?1",
+  }[kind];
+  await d1Of(db).prepare(sql).bind(userId, idx).run();
+}

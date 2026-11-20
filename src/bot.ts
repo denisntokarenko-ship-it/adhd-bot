@@ -6,6 +6,7 @@ import { createAiClient, type AiClient } from "./ai/client";
 import { handleCallback, handleText, handleVoice, type CaptureDeps } from "./capture";
 import { createStt, type Stt } from "./ai/stt";
 import { handleExport, handleToday } from "./commands";
+import { handleReminderCallback, isReminderCallback } from "./reminders/buttons";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
 import type { AppEnv } from "./env";
@@ -130,11 +131,17 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       await ctx.answerCallbackQuery({ text: PRIVATE_BOT_TEXT });
       return;
     }
+    let toast: string | undefined;
     try {
       const user = await ensureUser(fromId, db, deps.clock.now());
-      await handleCallback(ctx, captureDeps(user));
+      if (isReminderCallback(ctx.callbackQuery.data)) {
+        // ✅ ⏰ 🗑 👍 і зведення (крок 2.2): тост — відповідь на callback, його ставить handler (відповісти можна лише раз)
+        toast = await handleReminderCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand });
+      } else {
+        await handleCallback(ctx, captureDeps(user));
+      }
     } finally {
-      await ctx.answerCallbackQuery();
+      await ctx.answerCallbackQuery(toast === undefined ? undefined : { text: toast });
     }
   });
 
