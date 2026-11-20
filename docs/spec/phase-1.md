@@ -10,7 +10,7 @@
 
 ## Схема (міграція `0002`, крок 1.1)
 
-Часи — UTC ms з `clock` (НФ-1). Колонки `parent_id`, `travel_min`, `snooze_count`, `done_at` існують уже зараз (з `PLAN.md`), але до Фаз 2/5 порожні. `items.person_id` **не створюється** — додається у Фазі 7 разом з `people` (посилання на неіснуючу таблицю ламає DML при `foreign_keys=ON`).
+Часи — UTC ms з `clock` (НФ-1). Колонки `travel_min`, `snooze_count`, `done_at` існують уже зараз (з `PLAN.md`), але до Фаз 2/5 порожні; `parent_id` і `points_ledger` у `0002` не створюються (див. `decisions.md`, рішення 1.1). `items.person_id` **не створюється** — додається у Фазі 7 разом з `people` (посилання на неіснуючу таблицю ламає DML при `foreign_keys=ON`).
 
 ```sql
 CREATE TABLE captures (                       -- одне вхідне повідомлення; одиниця ідемпотентності
@@ -63,7 +63,7 @@ CREATE TABLE items (
   priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal','important')),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','done','released')),
   travel_min INTEGER CHECK (travel_min IS NULL OR travel_min BETWEEN 0 AND 600),
-  parent_id INTEGER REFERENCES items(id),
+  -- parent_id: у 0002 НЕ створено (рішення 1.1, `decisions.md`) — додасть 5.1 через ALTER TABLE ... ADD COLUMN
   created_at INTEGER NOT NULL,
   done_at INTEGER,
   snooze_count INTEGER NOT NULL DEFAULT 0 CHECK (snooze_count >= 0),
@@ -74,7 +74,7 @@ CREATE INDEX ix_items_user_status_due ON items(user_id, status, due_at);
 CREATE INDEX ix_items_capture ON items(capture_id);
 
 CREATE VIRTUAL TABLE items_fts USING fts5(title, body, content='items', content_rowid='id',
-                                          tokenize='unicode61 remove_diacritics 2');
+                                          tokenize='unicode61 remove_diacritics 2 separators ''ʼ'''); -- separators 'ʼ' (U+02BC) — див. `decisions.md`, рішення 1.1
 -- тригери: AFTER INSERT → insert; AFTER DELETE → 'delete' зі старими значеннями;
 -- AFTER UPDATE OF title, body → 'delete' + insert. body скрізь через coalesce(body,'').
 
@@ -92,6 +92,7 @@ CREATE TABLE ai_calls (
 );
 CREATE INDEX ix_ai_calls_user_day ON ai_calls(user_id, created_at);
 
+-- points_ledger: у 0002 НЕ створено (рішення 1.1) — це `0003_points.sql` кроку 1.5
 CREATE TABLE points_ledger (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
