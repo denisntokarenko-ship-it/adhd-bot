@@ -12,7 +12,7 @@ match = "2.4.a/b"
 [[mutant]]
 id = "M1b"
 file = "src/db/points.ts"
-old = '''SELECT ?1, ?4, 'done', id, ?3 FROM items WHERE id = ?2 AND user_id = ?1 AND status = 'open\''''
+old = '''SELECT ?1, ?4, 'done', id, ?3 FROM items WHERE id = ?2 AND user_id = ?1 AND status = 'open''''
 new = '''SELECT ?1, ?4, 'done', id, ?3 FROM items WHERE id = ?2 AND user_id = ?1'''
 why = "задокументований еквівалент: умова open в INSERT очок — оптимізація, друге +10 однаково відсікає ux_ledger_done (ON CONFLICT DO NOTHING); подвійного очка не буде"
 expect = "survived"
