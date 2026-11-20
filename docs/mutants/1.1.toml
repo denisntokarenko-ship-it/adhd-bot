@@ -1,0 +1,130 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/db/items.ts"
+old = '''FROM items WHERE id = ?1 AND user_id = ?2`)'''
+new = '''FROM items WHERE id = ?1 AND ?2 IS NOT NULL`)'''
+why = "getById без user_id = ? -> чужий id віддає запис -> червоніє «чужий userId не бачить запис»"
+match = "чужий userId не бачить запис"
+
+[[mutant]]
+id = "M2"
+file = "migrations/0002_items.sql"
+old = '''CREATE TRIGGER items_fts_au AFTER UPDATE OF title, body ON items BEGIN'''
+new = '''CREATE TRIGGER items_fts_au AFTER UPDATE OF kind ON items BEGIN'''
+why = "тригер update у items_fts не спрацьовує на title/body -> індекс не оновлюється -> червоніє пошук після UPDATE"
+match = "після UPDATE title"
+
+[[mutant]]
+id = "M3"
+file = "src/db/aiCalls.ts"
+old = '''const [from, to] = dayBounds(tz, now);'''
+new = '''const [from, to] = [Math.floor(now / 86_400_000) * 86_400_000, Math.floor(now / 86_400_000) * 86_400_000 + 86_400_000];'''
+why = "countToday за UTC-добою замість київської -> червоніє «23:30 UTC уже наступна доба»"
+match = "countToday рахує за київською добою"
+
+[[mutant]]
+id = "M4"
+file = "src/db/items.ts"
+old = '''${sets.join(", ")} WHERE id = ?1 AND user_id = ?2'''
+new = '''${sets.join(", ")} WHERE id = ?1 AND ?2 IS NOT NULL'''
+why = "update без user_id -> чужий змінює запис -> червоніє «чужий userId не змінює запис»"
+match = "чужий userId не змінює запис"
+
+[[mutant]]
+id = "M5"
+file = "src/db/items.ts"
+old = '''WHERE id = ?1 AND user_id = ?2 RETURNING ${COLUMNS}`,'''
+new = '''WHERE id = ?1 AND ?2 IS NOT NULL RETURNING ${COLUMNS}`,'''
+why = "setStatus без user_id -> чужий закриває запис -> червоніє «чужий userId не змінює запис»"
+match = "чужий userId не змінює запис"
+
+[[mutant]]
+id = "M6"
+file = "src/db/items.ts"
+old = '''WHERE items_fts MATCH ?1 AND i.user_id = ?2'''
+new = '''WHERE items_fts MATCH ?1 AND ?2 IS NOT NULL'''
+why = "search без user_id -> пошук віддає чужі записи -> червоніє ізоляція пошуку"
+match = "чужий userId не бачить запис"
+
+[[mutant]]
+id = "M7"
+file = "src/db/items.ts"
+old = '''WHERE items_fts MATCH ?1 AND i.user_id = ?2'''
+new = """WHERE items_fts MATCH ?1 AND i.user_id = ?2 AND i.status <> 'released'"""
+why = "search ховає released -> червоніє «released не видаляє, а search знаходить»"
+match = "search знаходить released"
+
+[[mutant]]
+id = "M8"
+file = "src/fts.ts"
+old = '''replaceAll('"', '""')}"*`);'''
+new = '''replaceAll('"', '""')}"`);'''
+why = "запит без префікса * -> «лікар» не знаходить «лікаря» -> червоніє тест префікса"
+match = "знаходить «Запис до лікаря»"
+
+[[mutant]]
+id = "M9"
+file = "migrations/0002_items.sql"
+old = '''CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN'''
+new = '''CREATE TRIGGER items_fts_ad AFTER DELETE ON items WHEN 0 BEGIN'''
+why = "тригер delete не спрацьовує -> видалений запис лишається в індексі -> червоніє «після DELETE»"
+match = "після DELETE"
+
+[[mutant]]
+id = "M10"
+file = "migrations/0002_items.sql"
+old = """remove_diacritics 2 separators ''ʼ''"""
+new = '''remove_diacritics 2'''
+why = "прибрано separators ʼ -> «пʼятниця» склеюється в один токен -> червоніє тест апострофів"
+match = "апострофи"
+
+[[mutant]]
+id = "M11"
+file = "src/time.ts"
+old = '''const end = localMidnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), tz);'''
+new = '''const end = start + MS_PER_DAY;'''
+why = "кінець доби = початок + 24 год -> 23/25-годинні доби ламаються -> червоніє dayBounds"
+match = "dayBounds"
+
+[[mutant]]
+id = "M12"
+file = "src/db/aiCalls.ts"
+old = '''AND created_at < ?3'''
+new = '''AND created_at <= ?3'''
+why = "верхня межа доби включно -> запис рівно о 00:00 потрапляє у попередню добу -> червоніє «межа доби»"
+match = "межа доби"
+
+[[mutant]]
+id = "M13"
+file = "src/db/aiCalls.ts"
+old = '''WHERE user_id = ?1 AND created_at >= ?2'''
+new = '''WHERE ?1 IS NOT NULL AND created_at >= ?2'''
+why = "countToday без user_id -> лічильник чужих викликів -> червоніє countToday"
+match = "countToday рахує за київською добою"
+
+[[mutant]]
+id = "M14"
+file = "migrations/0002_items.sql"
+old = '''CHECK ((ok = 1) = (error IS NULL))'''
+new = '''CHECK (1)'''
+why = "прибрано CHECK ok <=> error -> БД приймає ok=1 з error -> червоніє 1.1.b ai_calls"
+match = "ai_calls: ok=1 з error"
+
+[[mutant]]
+id = "M15"
+file = "migrations/0002_items.sql"
+old = '''CHECK ((status = 'done') = (done_at IS NOT NULL)),'''
+new = '''CHECK (1),'''
+why = "прибрано CHECK done <=> done_at -> червоніє 1.1.b"
+match = "status='done' без done_at"
+
+[[mutant]]
+id = "M16"
+file = "migrations/0002_items.sql"
+old = '''BEGIN SELECT RAISE(ABORT, 'update is a fix'); END;'''
+new = '''BEGIN SELECT 1; END;'''
+why = "тригер «update_id уже виправлення» нічого не відхиляє -> червоніє 1.1.b capture_fixes"
+match = "capture_fixes: повтор update_id"
