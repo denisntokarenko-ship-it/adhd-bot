@@ -30,6 +30,9 @@ export default defineConfig({
           ],
           test: {
             name: "workers",
+            // SDK Anthropic тягне `standardwebhooks` (CJS із відносним require) — runner workerd не вміє його резолвити
+            // (known-issues Cloudflare «Module resolution»): преcбандлюємо його оптимізатором Vite (deps.optimizer.ssr). Прод-бандл збирає wrangler/esbuild.
+            deps: { optimizer: { ssr: { enabled: true, include: ["standardwebhooks"] } } },
             include: ["test/worker/**/*.test.ts"],
             setupFiles: ["./test/worker/setup.ts"],
           },

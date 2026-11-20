@@ -1,0 +1,172 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/ai/parse.ts"
+old = '''const past = raw.all_day ? dueAt < dayBounds(tz, now)[0] : dueAt <= now;'''
+new = '''const past = false;'''
+why = "прибрано перевірку «дата в минулому» -> минулий час зберігається як due_at -> червоніє тест валідації «час сьогодні вже минув»"
+match = "час сьогодні вже минув"
+
+[[mutant]]
+id = "M2"
+file = "src/ai/parse.ts"
+old = '''>= ctx.dailyLimit) return { fallback: true, reason: "limit" };'''
+new = '''>= Infinity) return { fallback: true, reason: "limit" };'''
+why = "прибрано перевірку денного ліміту -> виклик іде попри вичерпаний ліміт -> червоніє «ліміт вичерпано → fallback без виклику ШІ»"
+match = "ліміт вичерпано"
+
+[[mutant]]
+id = "M3"
+file = "src/ai/parse.ts"
+old = '''    await record(false, kind, 0, 0);
+    return { fallback: true, reason: "unavailable" };'''
+new = '''    await record(false, kind, 0, 0);
+    throw e;'''
+why = "catch кидає далі замість fallback -> збій ШІ губить захоплення -> червоніє «ШІ кидає 500»"
+match = "ШІ кидає 500"
+
+[[mutant]]
+id = "M4"
+file = "src/ai/parse.ts"
+old = '''dueAt <= now;'''
+new = '''dueAt < now;'''
+why = "`<=` -> `<`: час рівно зараз вважається майбутнім -> червоніє «час рівно зараз → минуле»"
+match = "час рівно зараз"
+
+[[mutant]]
+id = "M5"
+file = "src/ai/parse.ts"
+old = '''>= ctx.dailyLimit) return'''
+new = '''> ctx.dailyLimit) return'''
+why = "`>=` -> `>` у ліміті: дозволено ліміт+1 викликів -> червоніє «ліміт вичерпано»"
+match = "ліміт вичерпано"
+
+[[mutant]]
+id = "M6"
+file = "src/ai/parse.ts"
+old = '''nowLocal: localIso(now, tz),'''
+new = '''nowLocal: new Date(now).toISOString().slice(0, 16),'''
+why = "now_local з UTC-дати замість київської -> о 00:30 у промпті «вчора» -> червоніє 1.3.f"
+match = "1.3.f: 00:30 за Києвом"
+
+[[mutant]]
+id = "M7"
+file = "src/ai/prompt.ts"
+old = '''return text.replace(/<(\/?\s*message\b)/gi, "&lt;$1");'''
+new = '''return text;'''
+why = "закривний тег у тексті не екранується -> з розділювачів можна «вийти» -> червоніє 1.2.g"
+match = "1.2.g"
+
+[[mutant]]
+id = "M8"
+file = "src/ai/schema.ts"
+old = '''return have.length === keys.length && keys.every((k) => Object.hasOwn(o, k));'''
+new = '''return keys.every((k) => Object.hasOwn(o, k));'''
+why = "зайві поля дозволені (лише наявність потрібних) -> червоніє «зайве поле запису»"
+match = "зайве поле запису"
+
+[[mutant]]
+id = "M9"
+file = "src/ai/schema.ts"
+old = '''items.length > MAX_ITEMS'''
+new = '''items.length > 1000'''
+why = "ліміт 20 записів знято -> 21 запис проходить -> червоніє «21 запис»"
+match = "21 запис"
+
+[[mutant]]
+id = "M10"
+file = "src/ai/parse.ts"
+old = '''return s.replace(/[\r\n\t]+/g, " ").replace(CONTROL_KEEP_NL, "").trim();'''
+new = '''return s.replace(/[\r\n\t]+/g, " ").trim();'''
+why = "керуючі символи й нулі лишаються в title -> червоніє «керуючі символи й нулі видалено»"
+match = "керуючі символи й нулі видалено"
+
+[[mutant]]
+id = "M11"
+file = "src/ai/parse.ts"
+old = '''const title = cut(cleanTitle(raw.title), TITLE_MAX, "…");'''
+new = '''const title = cleanTitle(raw.title);'''
+why = "title не обрізається до 200 -> CHECK у БД впав би на записі -> червоніє «250 символів → 200»"
+match = "250 символів"
+
+[[mutant]]
+id = "M12"
+file = "src/time.ts"
+old = '''if (candidates.length === 0) return wall - before;'''
+new = '''if (candidates.length === 0) return wall - after;'''
+why = "неіснуючий час зсувається назад, а не вперед -> червоніє 1.3.b"
+match = "1.3.b"
+
+[[mutant]]
+id = "M13"
+file = "src/time.ts"
+old = '''return Math.min(...candidates);'''
+new = '''return Math.max(...candidates);'''
+why = "подвійна година бере друге входження -> червоніє 1.3.b"
+match = "1.3.b"
+
+[[mutant]]
+id = "M14"
+file = "src/ai/parse.ts"
+old = '''dueAt < dayBounds(tz, now)[0]'''
+new = '''dueAt < now'''
+why = "«цілий день сьогодні» вважається минулим (початок доби < now) -> червоніє «лише дата (all_day) сьогодні»"
+match = "лише дата (all_day) сьогодні"
+
+[[mutant]]
+id = "M15"
+file = "src/ai/parse.ts"
+old = '''if (res.stopReason === "refusal") return fail("schema");'''
+new = ''''''
+why = "refusal не розпізнається окремо -> інший error у журналі -> червоніє «refusal → fallback»"
+match = "refusal"
+
+[[mutant]]
+id = "M16"
+file = "src/ai/parse.ts"
+old = '''items.length === 0 ? [noteFromText(text)] : items'''
+new = '''items'''
+why = "порожній items дає порожній результат -> запис губиться -> червоніє «порожній масив items»"
+match = "порожній масив items"
+
+[[mutant]]
+id = "M17"
+file = "src/ai/parse.ts"
+old = '''await record(true, null, res.inputTokens, res.outputTokens);'''
+new = ''''''
+why = "успішний виклик не пишеться в ai_calls -> ліміт і вартість не рахуються -> червоніє 1.2.e"
+match = "1.2.e"
+
+[[mutant]]
+id = "M18"
+file = "src/ai/parse.ts"
+old = '''if (dueAt > now + MAX_AHEAD_MS) return none("too_far");'''
+new = ''''''
+why = "дата за горизонтом 2 роки зберігається -> червоніє «далі ніж 2 роки»"
+match = "далі ніж 2 роки"
+
+[[mutant]]
+id = "M19"
+file = "src/ai/parse.ts"
+old = '''if (dateOnly !== raw.all_day) return none("bad_format");'''
+new = ''''''
+why = "розбіжність all_day і формату не ловиться -> червоніє «дата без часу при all_day=false»"
+match = "дата без часу при all_day=false"
+
+[[mutant]]
+id = "M20"
+file = "src/ai/client.ts"
+old = '''system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],'''
+new = '''system: [{ type: "text", text: req.system }],'''
+why = "системний промпт без cache_control -> не кешується -> червоніє «форма запиту»"
+match = "форма запиту"
+
+[[mutant]]
+id = "M21"
+file = "src/ai/client.ts"
+old = '''maxRetries: 0,'''
+new = '''maxRetries: 2,'''
+why = "SDK мовчки повторює запити (3 × 20 с з'їдають бюджет НФ-10) -> червоніє «без прихованих повторів SDK»"
+match = "без прихованих повторів SDK"
