@@ -591,6 +591,21 @@ describe("S2.6 анти-шум", () => {
     expect((await rems()).map((r) => r.sent_as)).toEqual(["summary", "summary", "summary"]);
   });
 
+  it("S2.3.d + S2.6: закриті записи не займають місця в доборі (7 рядків, 2 закриті → 5 окремих, без зведення)", async () => {
+    const tg = mockTelegram();
+    const u = await user();
+    const items: number[] = [];
+    for (let k = 0; k < 7; k++) {
+      const i = await mkItem(u, { title: `справа ${k}` });
+      items.push(i);
+      await rem(u, i, { fire_at: NOW - 1000 + k });
+    }
+    for (const i of items.slice(0, 2)) await DB.prepare("UPDATE items SET status = 'done', done_at = ? WHERE id = ?").bind(NOW, i).run();
+    await cron();
+    expect(sent(tg)).toHaveLength(5);
+    expect((await rems()).map((r) => r.sent_as ?? r.status)).toEqual(["cancelled", "cancelled", "single", "single", "single", "single", "single"]);
+  });
+
   it("2.9.b: один запізнілий + свіжий — обидва окремо", async () => {
     const tg = mockTelegram();
     const u = await user();
