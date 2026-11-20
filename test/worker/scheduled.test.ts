@@ -73,16 +73,24 @@ describe("S0.3 cron-серце", () => {
   });
 
   it("0.3.c: таймаут 5 с — пінг перервано, прогін завершується, last_ping_ok_at не змінено", async () => {
+    const realSetTimeout = globalThis.setTimeout; // справжній годинник: ним міряємо «завис», коли fake-таймери ще не рушили
+    const sleep = (ms: number) => new Promise<void>((r) => realSetTimeout(r, ms));
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    vi.spyOn(globalThis, "fetch").mockImplementation(
+    // «Завислий» монітор: fetch сам не завершується НІКОЛИ і реагує лише на abort. Без `signal` у виклику
+    // (R3) він не відхилиться — прогін зависне, і тест червоніє, а не проходить «випадково» через TypeError.
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(
       (_u, init) =>
         new Promise((_res, rej) => {
-          (init!.signal as AbortSignal).addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")));
+          init?.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")));
         }),
     );
-    const run = runScheduled(withPing(), clock);
-    await vi.advanceTimersByTimeAsync(PING_TIMEOUT_MS);
-    await expect(run).resolves.toBeUndefined();
+    const run = runScheduled(withPing(), clock).then(() => "done" as const);
+    for (let i = 0; i < 200 && spy.mock.calls.length === 0; i++) await sleep(5); // серце записано, пінг пішов, таймер 5 с стоїть
+    expect(spy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(PING_TIMEOUT_MS - 1);
+    expect(await Promise.race([run, sleep(50).then(() => "pending" as const)])).toBe("pending"); // до 5 с ще чекаємо
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await Promise.race([run, sleep(1_000).then(() => "hung" as const)])).toBe("done"); // рівно на 5 с — перервано
     expect(await rows()).toEqual([{ key: "cron", last_run_at: NOW, last_ping_ok_at: null }]);
   });
 

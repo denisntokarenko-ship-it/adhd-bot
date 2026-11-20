@@ -1,0 +1,50 @@
+# Мутанти fix/phase-0-review: R3, R5 (повтор зі звіту R-0) + S0.8.b. Запуск після коміту:
+#   python scripts/mutate.py docs/mutants/fix-phase-0-review.toml --report docs/mutants/fix-phase-0-review.md
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "R3"
+file = "src/scheduled.ts"
+old = '''{ method: "GET", signal: ctl.signal }'''
+new = '''{ method: "GET" }'''
+why = "пінг монітора без signal — таймаут 5 с не діє (0.3.c)"
+match = "0\.3\.c"
+
+[[mutant]]
+id = "R3b"
+file = "src/scheduled.ts"
+old = '''setTimeout(() => ctl.abort(), PING_TIMEOUT_MS)'''
+new = '''setTimeout(() => {}, PING_TIMEOUT_MS)'''
+why = "таймер є, але abort не викликається (0.3.c)"
+match = "0\.3\.c"
+
+[[mutant]]
+id = "R5"
+file = "src/db/system.ts"
+old = '''// Форма /health стабільна'''
+new = '''export async function allUserTgIds(db: Db): Promise<number[]> {
+  return [];
+}
+
+// Форма /health стабільна'''
+why = "новий експорт без userId у system.ts (0.4.d)"
+match = "0\.4\.d"
+
+[[mutant]]
+id = "R5b"
+file = "test/node/guard-lib.ts"
+old = '''"src/db/system.ts": ["readHeartbeat", "heartbeat", "markPingOk", "queueSize"],'''
+new = '''"src/db/system.ts": ["readHeartbeat", "heartbeat", "markPingOk"],'''
+why = "з винятків випав існуючий queueSize — список має бути точним (0.4.d)"
+match = "0\.4\.d"
+
+[[mutant]]
+id = "S8b"
+file = "scripts/mutate.py"
+old = '''    reason = dirty_tree(root)
+    if reason:'''
+new = '''    reason = None
+    if reason:'''
+why = "прибрати перевірку брудного дерева (0.8.b)"
+match = "0\.8\.b"
