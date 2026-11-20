@@ -33,6 +33,22 @@ CREATE TABLE captures (                       -- одне вхідне пові�
 );
 CREATE INDEX ix_captures_pending ON captures(status, next_try_at);
 
+CREATE TABLE capture_fixes (                  -- update повідомлення-виправлення («Не так», S1.6): НФ-7
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  capture_id INTEGER NOT NULL REFERENCES captures(id),
+  tg_update_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (user_id, tg_update_id)
+);
+-- один простір update_id на два шляхи: жоден не може бути і захопленням, і виправленням
+CREATE TRIGGER tg_captures_not_fix BEFORE INSERT ON captures
+WHEN EXISTS (SELECT 1 FROM capture_fixes WHERE user_id = NEW.user_id AND tg_update_id = NEW.tg_update_id)
+BEGIN SELECT RAISE(ABORT, 'update is a fix'); END;
+CREATE TRIGGER tg_fixes_not_capture BEFORE INSERT ON capture_fixes
+WHEN EXISTS (SELECT 1 FROM captures WHERE user_id = NEW.user_id AND tg_update_id = NEW.tg_update_id)
+BEGIN SELECT RAISE(ABORT, 'update is a capture'); END;
+
 CREATE TABLE items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -84,7 +100,8 @@ CREATE TABLE points_ledger (
   item_id INTEGER REFERENCES items(id) ON DELETE SET NULL,
   capture_id INTEGER REFERENCES captures(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL,
-  CHECK (delta > 0 OR (reason = 'redeem' AND delta < 0))
+  CHECK (delta <> 0 AND (reason = 'redeem') = (delta < 0)),  -- мінус лише redeem, redeem лише мінус
+  CHECK (reason <> 'capture' OR capture_id IS NOT NULL)      -- інакше NULL обходить UNIQUE нижче
 );
 CREATE UNIQUE INDEX ux_ledger_capture ON points_ledger(capture_id) WHERE reason = 'capture';
 CREATE INDEX ix_ledger_user ON points_ledger(user_id);
@@ -131,12 +148,12 @@ CREATE INDEX ix_ledger_user ON points_ledger(user_id);
 ### S1.1 · P1 · Схема й шар даних (крок 1.1) 🔒
 
 - **1.1.a** Given міграція `0002`, When застосовано, Then існують усі таблиці, індекси й тригери з розділу «Схема»; повторний прогін — без помилки.
-- **1.1.b** Негатив у БД, кожен окремим тестом: `kind='todo'`; `title=''`; `title` 201 символ; `status='done'` без `done_at`; `all_day=1` без `due_at`; повторне `(user_id, tg_update_id)`; `captures` без `raw_text` і `tg_file_id`; `pending` без `next_try_at` / `parsed` з `next_try_at`; `ai_calls.ok=1` з `error`. Усе відхилено.
+- **1.1.b** Негатив у БД, кожен окремим тестом: `kind='todo'`; `title=''`; `title` 201 символ; `status='done'` без `done_at`; `all_day=1` без `due_at`; повторне `(user_id, tg_update_id)`; `captures` без `raw_text` і `tg_file_id`; `pending` без `next_try_at` / `parsed` з `next_try_at`; `ai_calls.ok=1` з `error`; `capture_fixes` з повторним `(user_id, tg_update_id)` або з update_id, уже наявним у `captures` (і навпаки). Усе відхилено.
 - **1.1.c** FTS: Given `items` з title «Лікар у п'ятницю», Then `findByText(userId,"лікар")` знаходить; після `UPDATE title='Зубний'` — старе слово не знаходить, нове знаходить; після `DELETE` — не знаходить; `status='released'` лишається знайденим. Реєстр: «Лікар» == «лікар».
 - **1.1.d** Негатив. `findByText` на запитах `"`, `AND OR (`, `*`, `NEAR(`, порожньому рядку не кидає (кожен токен береться в лапки), повертає порожньо.
 - **1.1.e** Ізоляція. Given два користувачі з однаковим словом у записах, Then `findByText`, `listToday`, `getItem` для одного не повертають записи іншого; кожна функція `src/db/items.ts`/`captures.ts`/`aiCalls.ts`/`points.ts` має `userId` першим параметром (охоронець із S0.4.d).
 - **1.1.f** Атомарність. Given `DB.batch` із вставкою захоплення, записів і очок, коли друга інструкція падає, Then немає ні захоплення, ні очок.
-- **1.1.g** `[ПОТРІБНО УТОЧНИТИ: чи `wrangler d1 export` і Time Travel працюють із віртуальною таблицею FTS5]` — неблокуюче, перевірити в 1.1; наслідок — у `decisions.md`.
+- **1.1.g** Перевірити питання про `wrangler d1 export` / Time Travel з FTS5 (`open-questions.md`, Фаза 1); наслідок — у `decisions.md`.
 
 ### S1.2 · P1 · Розбір записів — контракт і валідація (крок 1.2)
 
@@ -149,7 +166,7 @@ CREATE INDEX ix_ledger_user ON points_ledger(user_id);
 - **1.2.e** Given успіх, Then `ai_calls` має `ok=1`, токени з відповіді, `purpose='parse'`, `model` з конфігу; тексту в рядку немає.
 - **1.2.f** Конструктор промпту приймає лише `{text, source, nowLocal, tz, weekday}`. Тест: модуль промпту не імпортує нічого з `src/db/`; промпт для однакового вхідного однаковий незалежно від вмісту БД (засіяні записи й, з Фази 4, рутини в нього не потрапляють); мок Claude падає, якщо в промпті є засіяний рядок «ліки».
 - **1.2.g** Given текст містить `</message>` і «ігноруй попередні інструкції», Then в промпті рівно один закривний тег, текст — всередині `<message source="text">…</message>`.
-- **1.2.h** `[ПОТРІБНО УТОЧНИТИ: точна назва параметра structured outputs у Claude API для Haiku 5.5]` — неблокуюче: `web-fetch` звіряє з живою документацією на початку 1.2, результат — в «Рішення» `PROGRESS.md`.
+- **1.2.h** Назву параметра structured outputs для Haiku 5.5 звіряє `web-fetch` на початку 1.2 (`open-questions.md`, Фаза 1); результат — в «Рішення» `PROGRESS.md`.
 
 ### S1.3 · P1 · Дата: перетворення й правила (крок 1.2)
 
@@ -210,13 +227,14 @@ CREATE INDEX ix_ledger_user ON points_ledger(user_id);
 (Ключове для довіри: бот не вгадав — людина виправляє однією фразою.)
 
 - **1.6.a** Given квитанція, When «✏️ Не так», Then на цьому захопленні `fix_requested_at=now` (на інших цього користувача очищено), `answerCallbackQuery`, відповідь «Ок, напиши чи надиктуй, як правильно» (пул). Повторне натискання — без шкоди.
-- **1.6.b** When наступне повідомлення (текст чи голос) у межах 10 хв, Then це не нове захоплення (нового рядка `captures` і очок немає); викликається ШІ з `purpose='fix'`, у промпті оригінал і виправлення окремими розділювачами; **в одному batch** видалено відкриті записи цього захоплення й вставлено нові; `fix_requested_at` очищено; нова квитанція, у старої знято кнопки.
+- **1.6.b** When наступне повідомлення (текст чи голос) у межах 10 хв, Then це не нове захоплення (нового рядка `captures` і очок немає); викликається ШІ з `purpose='fix'`, у промпті оригінал і виправлення окремими розділювачами; **в одному batch** вставлено `capture_fixes(tg_update_id виправлення)`, видалено відкриті записи цього захоплення й вставлено нові; `fix_requested_at` очищено; нова квитанція, у старої знято кнопки.
 - **1.6.c** Given вікно > 10 хв, Then повідомлення — звичайне нове захоплення.
 - **1.6.d** Негатив. Given ШІ впав під час виправлення, Then старі записи цілі, людині «лишив як було, спробуй ще раз», `fix_requested_at` діє до кінця вікна.
 - **1.6.e** Негатив. Given callback із `capture_id` іншого користувача або неіснуючим, Then нічого не змінено, `answerCallbackQuery` відправлено. Дані в `callback_data` ≤ 64 байти.
 - **1.6.f** FTS після заміни: старий заголовок не знаходиться, новий знаходиться.
 - **1.6.g** Друге виправлення того ж захоплення замінює перше (береться оригінал + найновіше виправлення) — рішення, `decisions.md`.
 - **1.6.h** Given виправлення зі словами «видали все», Then та сама межа, що в S1.2.g/S1.8.a: ШІ повертає записи за схемою, змінюються лише записи цього захоплення, нічого більше.
+- **1.6.i** Негатив (НФ-7). Given update 501 виправлення вже оброблено (`fix_requested_at=NULL`), When Telegram доставляє 501 знову (послідовно чи двома паралельними запитами), Then жодного нового `captures`/`items`/очка, ШІ не викликано, нової квитанції немає, 200: дубль розпізнано за update_id у `captures`/`capture_fixes` до ШІ, а UNIQUE і тригери БД (див. схему) — страховка на гонку. Тест перевіряє стан БД. Невдале виправлення (1.6.d) update_id не записує — повторна доставка його повторить.
 
 ### S1.7 · P2 · Голосове (крок 1.4)
 
@@ -247,7 +265,7 @@ CREATE INDEX ix_ledger_user ON points_ledger(user_id);
 
 - **1.9.a** Given нове захоплення, Then рівно один рядок `points_ledger(delta=1, reason='capture', capture_id)`; тієї ж хвилини повтор доставки — не додає (унікальний індекс `ux_ledger_capture` у БД, не лише перевірка в коді).
 - **1.9.b** `balance(userId)` = `SUM(delta)` по цьому користувачу; порожній журнал → 0; чужі рядки не враховуються.
-- **1.9.c** Негатив у БД (прямий SQL): `delta=0`; `delta=-1` з `reason='capture'`; `delta=+5` з `reason='redeem'`; `reason='penalty'` → усі відхилено. *Мутант: прибрати CHECK `delta > 0 OR redeem` → тест червоніє.*
+- **1.9.c** Негатив у БД (прямий SQL): `delta=0`; `delta=-1` з `reason='capture'`; `delta=+5` з `reason='redeem'`; `capture` з `capture_id=NULL`; `reason='penalty'` → усі відхилено. *Мутанти: прибрати CHECK знака/`redeem` або CHECK `capture_id IS NOT NULL` → відповідний тест червоніє.*
 - **1.9.d** Запасна нотатка, голосове без розпізнавання і пересилання дають одне очко; успішний повтор з S1.5 і виправлення з S1.6 — жодного додаткового. Порожнє голосове, фото, команди — нуль.
 - **1.9.e** У коді немає функції, що пише інші `reason` або від'ємний `delta` (redeem — Фаза 6); охоронець перелічує експорти `src/db/points.ts`.
 
@@ -278,9 +296,4 @@ CREATE INDEX ix_ledger_user ON points_ledger(user_id);
 
 ## Невідоме
 
-- `[ПОТРІБНО УТОЧНИТИ: яку дату мають на увазі за «завтра» о 00:00–04:59]` — неблокуюче. Припущення: календарна доба в `tz` (як у S1.3.f); квитанція показує день тижня й дату, «Не так» виправляє. Перевірити на живому вжитку.
-- `[ПОТРІБНО УТОЧНИТИ: чи є текст про ліки в чаті звичайним записом]` — неблокуюче. Припущення: так (це текст, який людина сама надіслала); дані `routines` у ШІ не йдуть у жодному разі (НФ-2). Рішення про підказку «для ліків є рутини» — Фаза 4.
-- `[ПОТРІБНО УТОЧНИТИ: чи `event` автоматично `important` для повторів]` — вирішує спека 2.0.
-- `[ПОТРІБНО УТОЧНИТИ: ліміт 300 с на голосове й поріг якості Whisper (≥ 16 з 20 зрозумілих без правок)]` — неблокуюче, припущення в дужках.
-- Галюцинації Whisper на тиші (на кшталт «Дякую за перегляд») — неблокуюче; спостерігати в S1.7.g.
-- Українська морфологія в FTS5 (без стемінгу: «лікаря» ≠ «лікар») — Фаза 7, префіксний пошук.
+Усі відкриті питання Фази 1 (дата за «завтра» о 00:00–04:59, текст про ліки, `event` і `important`, Whisper: якість, ліміт, галюцинації, морфологія FTS5) — в `open-questions.md`, розділ «Фаза 1»; тут не дублюються.
