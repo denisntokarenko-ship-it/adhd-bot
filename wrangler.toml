@@ -20,7 +20,7 @@ crons = ["* * * * *"]
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "adhd-preview"
-database_id = "REPLACE_WITH_PREVIEW_D1_ID" # 👤 `npx wrangler d1 create adhd-preview`
+database_id = "1f12ad7f-3cc4-4124-9179-fc15d598cfeb"
 migrations_dir = "migrations"
 
 [env.production]
