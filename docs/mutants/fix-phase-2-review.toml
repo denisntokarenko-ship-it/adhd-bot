@@ -1,0 +1,77 @@
+# Мутанти fix/phase-2-review: R5, R6, R7 (вижили в R-2) + нові на виправленнях Б1–Б3.
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/fix-phase-2-review.toml --report docs/mutants/fix-phase-2-review.md
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "R5"
+file = "src/reminders/dispatch.ts"
+old = '''timedEvent(item) ? item.due_at : null);'''
+new = '''null);'''
+why = "повтор leave_now після початку події створюється (його гасить лише leaveMoot): «ланцюг вичерпано» = sent без нащадка (2.2.b/e) ламається — В2"
+match = 'В2'
+
+[[mutant]]
+id = "R6"
+file = "src/scheduled.ts"
+old = '''    console.error("cron: dispatch failed", err instanceof Error ? err.name : "unknown");'''
+new = '''    throw err;'''
+why = "збій відправки нагадувань зупиняє processPending (S2.3.f, борг 0.3.f) — В1"
+match = 'R6'
+
+[[mutant]]
+id = "R7"
+file = "src/scheduled.ts"
+old = '''    console.error("cron: reminders failed", err instanceof Error ? err.name : "unknown");'''
+new = '''    throw err;'''
+why = "збій планувальника зупиняє відправку і processPending (S2.3.f) — В1"
+match = 'R7'
+
+[[mutant]]
+id = "F1"
+file = "src/reminders/plan.ts"
+old = '''  item.kind === "event" && item.all_day === 0 && item.due_at !== null;'''
+new = '''  item.kind === "event" && item.due_at !== null;'''
+why = "Б1: подія all_day знову «подія з часом» — її північ обрізає повтори, 1 відправка замість 4"
+match = 'P1a'
+
+[[mutant]]
+id = "F2"
+file = "src/reminders/plan.ts"
+old = '''  const go = p.wait.filter((r) => r.noWait === true);'''
+new = '''  const go = p.wait.filter(() => false);'''
+why = "Б2: без винятку — «час виходити» чекає вікна зведення й гасне на початку події (S2.6 п.1, 2.6.g)"
+match = 'P7|2\.6\.g'
+
+[[mutant]]
+id = "F3"
+file = "src/reminders/dispatch.ts"
+old = '''    noWait: timedEvent(item) && (r.kind === "leave_now" || r.kind === "repeat"), // S2.6 п.1, виняток R-2 Б2'''
+new = '''    noWait: false,'''
+why = "Б2: dispatch не позначає ланцюг leave_now — чиста функція має виняток, а cron ним не користується"
+match = 'P7'
+
+[[mutant]]
+id = "F4"
+file = "src/ai/prompt.ts"
+old = ''' Сигнал діє незалежно від місця у фразі: «важливо купити хліб», «через 2 хв важливо подзвонити мамі», «купити хліб, це важливо» — усе "important".'''
+new = ''''''
+why = "Б3 (в): «важливо» в середині фрази знову не гарантує important"
+match = '2\.8\.e'
+
+[[mutant]]
+id = "F5"
+file = "src/ai/prompt.ts"
+old = '''- Час без дня («о 15:00», «дейлі на 9 ранку») — найближча майбутня мить цього часу: сьогодні, якщо цей час сьогодні ще попереду від now_local, інакше завтра.
+'''
+new = ''''''
+why = "Б3 (а): час без дня знову без правила — запис без дати й без питання"
+match = '2\.8\.e'
+
+[[mutant]]
+id = "F6"
+file = "src/ai/prompt.ts"
+old = '''якщо вже минув — due_local=null, date_unclear=true'''
+new = '''якщо вже минув — due_local=null'''
+why = "Б3 (б): «у п'ятницю о 14:30», сказане в п'ятницю о 15:00, — тиша замість питання"
+match = '2\.8\.e'
