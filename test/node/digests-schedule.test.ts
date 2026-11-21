@@ -1,4 +1,5 @@
 // Розклад оглядів (docs/spec/phase-3.md, S3.1.j–k): `nextDigestAt` — чиста функція, час фіксований (НФ-1, НФ-11).
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nextDigestAt, localDayDiff, type DigestSettings } from "../../src/digests/schedule";
 
@@ -60,5 +61,20 @@ describe("S3.1 nextDigestAt", () => {
   it("localDayDiff рахує календарні доби за tz, не 24-годинні відрізки", () => {
     expect(localDayDiff("Europe/Kyiv", at("2026-11-20T22:30:00Z"), at("2026-11-21T10:00:00Z"))).toBe(0); // обидва — 21.11
     expect(localDayDiff("Europe/Kyiv", at("2026-11-20T10:00:00Z"), at("2026-11-23T07:00:00Z"))).toBe(3);
+  });
+});
+
+// Принцип 3 і правило 4: огляди без ШІ й без рутин — структурно, а не лише «мок не покликали».
+describe("S3.1.i / правило 4: код оглядів не імпортує ШІ й не читає рутини", () => {
+  const dir = new URL("../../src/digests/", import.meta.url);
+  const files = [...readdirSync(dir).map((f) => new URL(f, dir)), new URL("../../src/db/digests.ts", import.meta.url)];
+  it("жодного імпорту ../ai/*, жодної згадки routines", () => {
+    expect(files.length).toBeGreaterThan(4);
+    for (const f of files) {
+      const code = readFileSync(f, "utf-8").split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith("//")); // коментарі можуть згадувати правило
+      const text = code.join(" ");
+      expect(text, f.pathname).not.toMatch(/from\s+["'][^"']*\/ai\//);
+      expect(text, f.pathname).not.toMatch(/routine/i);
+    }
   });
 });

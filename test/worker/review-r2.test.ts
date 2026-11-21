@@ -78,7 +78,7 @@ describe("Б2: анти-шум не губить «час виходити» (S2
     // Повтори зведення так і чекали вікна: 08:00 зведення, наступне — лише о 09:00 (1/год не зламано, 2.6.f)
     const sums = (await DB.prepare("SELECT DISTINCT sent_at FROM reminders WHERE sent_as = 'summary' ORDER BY sent_at").all<{ sent_at: number }>()).results;
     expect(sums.map((r) => hm(r.sent_at))).toEqual(["06:00", "07:00"]);
-  });
+  }, 20_000); // 550 тиків cron; з кроку 3.1 кожен ще й доплановує огляди — на 5 с у паралельному прогоні не вкладається
 });
 
 describe("В2 / S2.2.e через dispatch: після останньої спроби leave_now немає жодного нащадка", () => {
