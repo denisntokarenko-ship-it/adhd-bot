@@ -36,9 +36,9 @@ match = "3.4.e"
 [[mutant]]
 id = "M5"
 file = "src/digests/schedule.ts"
-old = '''if (at !== null && at > now && at >= limit) return at;'''
-new = '''if (at !== null && at > now) return at;'''
-why = "без межі «не раніше наступної доби» (В1) -> червоніє 3.1.k (10:00 сьогодні після sent о 09:00; Лісабон; тиждень)"
+old = '''const end = dayBounds(u.tz, lastSentFireAt)[1]; // початок наступної локальної доби'''
+new = '''const end = dayBounds(u.tz, lastSentFireAt)[0]; // початок наступної локальної доби'''
+why = "межа — початок доби останнього sent замість її кінця (В1) -> червоніє 3.1.k (10:00 сьогодні після sent о 09:00; Лісабон; тиждень)"
 match = "3.1.k"
 
 [[mutant]]
