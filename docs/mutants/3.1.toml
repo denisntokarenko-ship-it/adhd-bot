@@ -1,0 +1,98 @@
+test = "npx vitest run --reporter=dot test/node/digests-schedule.test.ts test/worker/digests.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/digests/schedule.ts"
+old = '''export const MORNING_TASKS = 3;'''
+new = '''export const MORNING_TASKS = 30;'''
+why = "ліміт справ у ранку 3 → 30 -> червоніє 3.2.a (7 справ → рівно 3) і 3.2.b"
+match = "3\.2\.a|3\.2\.b"
+
+[[mutant]]
+id = "M2"
+file = "src/scheduled.ts"
+old = '''    await planDigests(openDb(env), clock.now());'''
+new = '''    void planDigests;'''
+why = "вимкнути доплановування (самовідновлення ланцюжка) -> червоніє 3.1.d (розірваний ланцюжок не відновлюється) і 3.1.a"
+match = "3\.1\.d|3\.1\.a"
+
+[[mutant]]
+id = "M3"
+file = "src/digests/dispatch.ts"
+old = '''    if (now - r.fire_at > DIGEST_TTL_MS) {'''
+new = '''    if (false && now - r.fire_at > DIGEST_TTL_MS) {'''
+why = "без перевірки DIGEST_TTL_MS запізнілий огляд іде -> червоніє 3.1.c (TTL) і 3.1.f (пауза скінчилась через 3,5 год)"
+match = "3\.1\.c|3\.1\.f"
+
+[[mutant]]
+id = "M4"
+file = "src/digests/dispatch.ts"
+old = '''x.item_id !== null && rendered.get(x.item_id)?.all_day === 1)'''
+new = '''x.item_id !== null)'''
+why = "ранок скасовує due ВСІХ all_day, а не лише відрендерених (Б1) -> червоніє 3.4.e (T1, T2 не в тексті, але їхні due зникли)"
+match = "3\.4\.e"
+
+[[mutant]]
+id = "M5"
+file = "src/digests/schedule.ts"
+old = '''if (at !== null && at > now && at >= limit) return at;'''
+new = '''if (at !== null && at > now) return at;'''
+why = "без межі «не раніше наступної доби» (В1) -> червоніє 3.1.k (10:00 сьогодні після sent о 09:00; Лісабон; тиждень)"
+match = "3\.1\.k"
+
+[[mutant]]
+id = "M6"
+file = "src/digests/schedule.ts"
+old = '''export const WARM_EVERY_DAYS = 3;'''
+new = '''export const WARM_EVERY_DAYS = 1;'''
+why = "тепла фраза щодня замість раз на 3 доби -> червоніє 3.3.a (дні 2–3 мають мовчати)"
+match = "3\.3\.a"
+
+[[mutant]]
+id = "M7"
+file = "src/db/digests.ts"
+old = '''AND NOT EXISTS (SELECT 1 FROM reminders c WHERE c.parent_id = r.id))'''
+new = '''AND 1 = 1)'''
+why = "«ще висить» бере і живі ланцюги (не лише вичерпані) -> червоніє 3.5.b (Z з живим повтором потрапляє в список)"
+match = "3\.5\.b"
+
+[[mutant]]
+id = "M8"
+file = "src/db/digests.ts"
+old = '''WHERE id = ?2 AND user_id = ?1 AND status = 'open' AND NOT (all_day = 1 AND due_at = ?3)`,'''
+new = '''WHERE id = ?2 AND user_id = ?1 AND NOT (all_day = 1 AND due_at = ?3)`,'''
+why = "✅ сьогодні без умови status='open': закритий запис «оживає» датою -> червоніє 3.6.h (done не змінюється)"
+match = "3\.6\.h"
+
+[[mutant]]
+id = "M9"
+file = "src/db/digests.ts"
+old = '''.prepare("SELECT status, due_at, all_day FROM items WHERE id = ?1 AND user_id = ?2")'''
+new = '''.prepare("SELECT status, due_at, all_day FROM items WHERE id = ?1 AND ?2 > 0")'''
+why = "перевірка власника запису у кнопках тижня без user_id (IDOR) -> червоніє 3.6.g (чужий id не дає нейтрального тосту)"
+match = "3\.6\.g"
+
+[[mutant]]
+id = "M10"
+file = "src/digests/schedule.ts"
+old = '''export const DIGEST_ORDER: readonly DigestKind[] = ["digest_morning", "digest_weekly", "digest_evening"];'''
+new = '''export const DIGEST_ORDER: readonly DigestKind[] = ["digest_weekly", "digest_morning", "digest_evening"];'''
+why = "порядок у тику: тиждень перед ранком -> червоніє 3.6.i / 3.1.i (ранок → тиждень → вечір)"
+match = "3\.6\.i|3\.1\.i"
+
+[[mutant]]
+id = "M11"
+file = "src/digests/render.ts"
+old = '''if (e.done.length === 0 && e.pointsToday <= 0 && e.hanging.length === 0) return null;'''
+new = '''if (false) return null;'''
+why = "порожній вечір усе одно надсилається -> червоніє 3.5.f (0 повідомлень) і 3.5.d"
+match = "3\.5\.f|3\.5\.d"
+
+[[mutant]]
+id = "M12"
+file = "src/db/digests.ts"
+old = '''AND (i.all_day = 1 OR i.due_at > ?4)'''
+new = '''AND (1 = 1 OR i.due_at > ?4)'''
+why = "у ранку лишаються події з часом, що вже минули -> червоніє 3.2.c (08:00 о 09:00 не показується)"
+match = "3\.2\.c"
