@@ -9,6 +9,7 @@ import { create, type NewItem } from "../../src/db/items";
 import { ensureUser } from "../../src/db/users";
 import type { AppEnv } from "../../src/env";
 import { runScheduled } from "../../src/scheduled";
+import { DIGEST_MORNING_POOL } from "../../src/texts";
 import { NOW, baseEnv, deps, mockTelegram, send, textUpdate } from "./helpers";
 
 const DB = env.DB!;
@@ -31,7 +32,7 @@ const user = async () => (await ensureUser(111, db(), Date.now())).id;
 const mk = async (u: number, over: Partial<NewItem>) => (await create(u, db(), { kind: "task", title: "т", source: "text", ...over }, Date.now())).id;
 type Row = { id: number; item_id: number; kind: string; attempt: number; max_attempts: number; status: string; sent_at: number | null; parent_id: number | null };
 const rems = async () =>
-  (await DB.prepare("SELECT id, item_id, kind, attempt, max_attempts, status, sent_at, parent_id FROM reminders ORDER BY id").all<Row>()).results;
+  (await DB.prepare("SELECT id, item_id, kind, attempt, max_attempts, status, sent_at, parent_id FROM reminders WHERE item_id IS NOT NULL ORDER BY id").all<Row>()).results;
 const hm = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString().slice(11, 16));
 async function ticks(from: number, to: number, stepMin = 1, e?: AppEnv) {
   for (let t = from; t <= to; t += stepMin * MIN) {
@@ -55,7 +56,8 @@ describe("Б1: подія all_day — не «подія з часом» (оди�
       ["repeat", 3, "sent", "07:20"],
       ["repeat", 4, "sent", "07:50"],
     ]);
-    expect(tg.sent()).toHaveLength(4);
+    // 09:00 Київ — іде ще й ранковий огляд (3.1): important не скасовується ним (S3.4.b), тож 4 пуші + огляд
+    expect(tg.sent().filter((m) => !DIGEST_MORNING_POOL.some((h) => String(m.body.text).startsWith(h)))).toHaveLength(4);
   });
 });
 

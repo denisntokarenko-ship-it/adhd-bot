@@ -156,3 +156,31 @@ export async function countDueReminders(db: Db, now: number): Promise<number> {
     .first<{ n: number }>();
   return row?.n ?? 0;
 }
+
+// ── Фаза 3: огляди (S3.1, НФ-3: виняток для вибірки по всіх користувачах) ───────────────────────────────────
+
+export interface MissingDigest {
+  user_id: number;
+  kind: "digest_morning" | "digest_evening" | "digest_weekly";
+  tz: string;
+  morning_at: number;
+  evening_at: number;
+  weekly_dow: number;
+  last_sent_fire_at: number | null; // `fire_at` останнього `sent` цього виду — для межі доби в `nextDigestAt`
+}
+
+// Користувачі, яким бракує `pending` огляду якогось виду (S3.1: ланцюг самовідновлюється). Один запит на тик; далі кожна
+// дія — вже з `user_id` рядка. Ідемпотентність — `ux_rem_digest_pending`: паралельний прогін нічого не задвоїть.
+export async function listUsersMissingDigests(db: Db): Promise<MissingDigest[]> {
+  const res = await d1Of(db)
+    .prepare(
+      `SELECT u.id AS user_id, k.kind AS kind, u.tz AS tz, u.morning_at AS morning_at, u.evening_at AS evening_at, u.weekly_dow AS weekly_dow,
+              (SELECT MAX(r.fire_at) FROM reminders r WHERE r.user_id = u.id AND r.kind = k.kind AND r.status IN ('sent','answered')) AS last_sent_fire_at
+       FROM users u
+       CROSS JOIN (SELECT 'digest_morning' AS kind UNION ALL SELECT 'digest_evening' UNION ALL SELECT 'digest_weekly') k
+       WHERE NOT EXISTS (SELECT 1 FROM reminders r WHERE r.user_id = u.id AND r.kind = k.kind AND r.status = 'pending')
+       ORDER BY u.id, k.kind`,
+    )
+    .all<MissingDigest>();
+  return res.results;
+}

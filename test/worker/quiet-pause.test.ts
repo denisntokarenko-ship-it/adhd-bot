@@ -12,6 +12,7 @@ import {
   ACK_RESUME_POOL,
   NO_PAUSE,
   PAUSE_ASK,
+  DIGEST_MORNING_POOL,
   PAUSE_HINT,
   QUIET_NONE,
   REMIND_DUE_POOL,
@@ -66,7 +67,7 @@ interface Rem {
   variant_idx: number | null;
   tg_message_id: number | null;
 }
-const rems = async (where = "1=1") => (await DB.prepare(`SELECT * FROM reminders WHERE ${where} ORDER BY id`).all<Rem>()).results;
+const rems = async (where = "1=1") => (await DB.prepare(`SELECT * FROM reminders WHERE item_id IS NOT NULL AND (${where}) ORDER BY id`).all<Rem>()).results;
 const usr = async () => (await DB.prepare("SELECT pause_until, quiet_from, quiet_to FROM users WHERE tg_id = 111").first<{ pause_until: number | null; quiet_from: number; quiet_to: number }>())!;
 
 const sent = (tg: ReturnType<typeof mockTelegram>) => tg.calls.filter((c) => c.method === "sendMessage");
@@ -270,7 +271,8 @@ describe("S2.11 /quiet", () => {
     expect((await rems(`id = ${id}`))[0]).toMatchObject({ status: "pending", fire_at: at("2026-11-20T21:00:00Z") });
     at$(at("2026-11-21T07:00:00Z")); // 09:00
     await cron();
-    expect(sent(tg)).toHaveLength(1);
+    // о 09:00 іде ще й ранковий огляд (крок 3.1): рахуємо лише нагадування
+    expect(sent(tg).filter((m) => !DIGEST_MORNING_POOL.some((h) => String(m.body.text).startsWith(h)))).toHaveLength(1);
   });
 });
 

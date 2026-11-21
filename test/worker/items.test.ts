@@ -34,7 +34,7 @@ describe("S1.1 міграція 0002", () => {
     const indexes = await names("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name");
     expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_status_due", "ix_items_user_status_due", "ix_ledger_user", "ix_rem_due", "ix_rem_item", "ix_rem_user_sent"]);
     const triggers = await names("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name");
-    expect(triggers).toEqual(["items_fts_ad", "items_fts_ai", "items_fts_au", "tg_captures_not_fix", "tg_fixes_not_capture"]);
+    expect(triggers).toEqual(["items_fts_ad", "items_fts_ai", "items_fts_au", "tg_captures_not_fix", "tg_fixes_not_capture", "trg_rem_digest_shape"]);
     expect(await names("SELECT name FROM pragma_table_info('items') ORDER BY cid")).toEqual([
       "id", "user_id", "capture_id", "kind", "title", "body", "raw_text", "source", "due_at", "all_day",
       "priority", "status", "travel_min", "created_at", "done_at", "snooze_count", "travel_asked_at", "planned_at", // 0004

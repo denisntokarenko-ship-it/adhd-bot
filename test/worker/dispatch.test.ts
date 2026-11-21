@@ -48,7 +48,7 @@ interface Rem {
   tg_message_id: number | null;
   variant_idx: number | null;
 }
-const rems = async (where = "1=1") => (await DB.prepare(`SELECT * FROM reminders WHERE ${where} ORDER BY id`).all<Rem>()).results;
+const rems = async (where = "1=1") => (await DB.prepare(`SELECT * FROM reminders WHERE item_id IS NOT NULL AND (${where}) ORDER BY id`).all<Rem>()).results;
 
 // прямий SQL: рядок із потрібним станом, без планувальника (записи без `due_at` планувальник не чіпає)
 async function rem(userId: number, itemId: number, over: Record<string, unknown> = {}): Promise<number> {

@@ -1,7 +1,7 @@
 // Відправка нагадувань з cron (docs/spec/phase-2.md, S2.3, S2.5, S2.6). Порядок: STALE → тиша → оренда → по
 // користувачах: перевірка записів → добір (окремі/зведення) → відправка → закриття ПІСЛЯ відправки.
 // Краще двічі, ніж жодного: рядок стає `sent` лише після `sendMessage`; збій процесу між ними лишає `pending` з орендою.
-import { Api, GrammyError } from "grammy";
+import { Api } from "grammy";
 import type { Clock } from "../clock";
 import { openDb, type Db } from "../db/index";
 import { listByIds, type Item } from "../db/items";
@@ -24,22 +24,13 @@ import { formatDue } from "../format";
 import { SUMMARY_HEAD_POOL, pickVariant } from "../texts";
 import { CLAIM_LIMIT, RUN_BUDGET_MS, STALE_MS, leaveMoot, nextRepeat, selectBatch, timedEvent, type BatchRow } from "./plan";
 import { poolFor, singleMessage, summaryMessage, type SummaryLine } from "./render";
+import { classify } from "./send-failure";
+import { dispatchDigests } from "../digests/dispatch";
+import { isDigestKind } from "../digests/schedule";
 
 export interface DispatchDeps {
   rand?: () => number;
   api?: Api; // лише для тестів
-}
-
-// Що робити з рядком після помилки Telegram (S2.3.c): 429 — відкласти на `retry_after`; 400/403 — чат недоступний,
-// рядок закрито; решта (5xx, мережа) — спроба не витрачена, рядок підбереться на наступному тику.
-type SendFailure = { kind: "rate"; until: number } | { kind: "dead"; code: number } | { kind: "transient" };
-
-function classify(err: unknown, now: number): SendFailure {
-  if (err instanceof GrammyError) {
-    if (err.error_code === 429) return { kind: "rate", until: now + (err.parameters?.retry_after ?? 30) * 1000 };
-    if (err.error_code === 400 || err.error_code === 403) return { kind: "dead", code: err.error_code };
-  }
-  return { kind: "transient" };
 }
 
 export async function dispatchReminders(env: AppEnv, clock: Clock, deps: DispatchDeps = {}): Promise<void> {
@@ -95,8 +86,17 @@ const overBudget = (c: Ctx) => c.clock.now() - c.start >= RUN_BUDGET_MS;
 const nextFor = (r: Reminder, item: Item, sentAt: number): NextAttempt | null =>
   nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: sentAt }, timedEvent(item) ? item.due_at : null);
 
-async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promise<void> {
+async function dispatchUser(c: Ctx, userId: number, claimedAll: Reminder[]): Promise<void> {
   const { db } = c;
+  // Огляди (S3.1) — окрема гілка ДО перевірки запису й добору: не зливаються в зведення, не чекають ліміту 6/год.
+  // Ранок (S3.4) може забрати `due` відрендерених записів: їх із подальшої відправки прибираємо.
+  const digests = claimedAll.filter((r) => isDigestKind(r.kind));
+  let claimed = claimedAll.filter((r) => !isDigestKind(r.kind));
+  if (digests.length > 0) {
+    const gone = await dispatchDigests(c, userId, digests, claimed);
+    claimed = claimed.filter((r) => !gone.has(r.id));
+  }
+  if (claimed.length === 0) return;
   const dl = await getDelivery(userId, db);
   if (dl === null) return;
   // 1) Запис не `open` (done/released/видалений) → рядок `cancelled` без повідомлення (S2.3.d).

@@ -7,6 +7,7 @@ import { handleCallback, handleText, handleVoice, type CaptureDeps } from "./cap
 import { createStt, type Stt } from "./ai/stt";
 import { handleExport, handleToday } from "./commands";
 import { handleReminderCallback, isReminderCallback } from "./reminders/buttons";
+import { handleDigestCallback, isDigestCallback } from "./digests/buttons";
 import { handlePause, handleQuiet, handleQuietCallback, handleResume, isQuietCallback } from "./quiet";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
@@ -147,6 +148,8 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       if (isReminderCallback(ctx.callbackQuery.data)) {
         // ✅ ⏰ 🗑 👍 і зведення (крок 2.2): тост — відповідь на callback, його ставить handler (відповісти можна лише раз)
         toast = await handleReminderCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand });
+      } else if (isDigestCallback(ctx.callbackQuery.data)) {
+        toast = await handleDigestCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // «показати все» й тиждень (крок 3.1)
       } else if (isQuietCallback(ctx.callbackQuery.data)) {
         toast = await handleQuietCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // /pause, /quiet (крок 2.4)
       } else {

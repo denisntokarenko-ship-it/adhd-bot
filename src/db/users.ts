@@ -55,7 +55,7 @@ export async function getDelivery(userId: number, db: Db): Promise<Delivery | nu
   return d1Of(db).prepare("SELECT tg_id, tz, morning_at FROM users WHERE id = ?1").bind(userId).first<Delivery>();
 }
 
-export type AckKind = "ok" | "later" | "rel" | "travel" | "pause" | "resume";
+export type AckKind = "ok" | "later" | "rel" | "travel" | "pause" | "resume" | "today";
 
 // Пам'ять варіанта підтверджень — колонка на пул (НФ-4, S2.10.b): інакше ✅ → ⏰ → ✅ повторив би текст.
 export async function getAckIdx(userId: number, kind: AckKind, db: Db): Promise<number | null> {
@@ -66,6 +66,7 @@ export async function getAckIdx(userId: number, kind: AckKind, db: Db): Promise<
     travel: "SELECT ack_travel_idx AS idx FROM users WHERE id = ?1",
     pause: "SELECT ack_pause_idx AS idx FROM users WHERE id = ?1",
     resume: "SELECT ack_resume_idx AS idx FROM users WHERE id = ?1",
+    today: "SELECT ack_today_idx AS idx FROM users WHERE id = ?1",
   }[kind];
   const row = await d1Of(db).prepare(sql).bind(userId).first<{ idx: number | null }>();
   return row?.idx ?? null;
@@ -79,6 +80,7 @@ export async function setAckIdx(userId: number, kind: AckKind, idx: number, db: 
     travel: "UPDATE users SET ack_travel_idx = ?2 WHERE id = ?1",
     pause: "UPDATE users SET ack_pause_idx = ?2 WHERE id = ?1",
     resume: "UPDATE users SET ack_resume_idx = ?2 WHERE id = ?1",
+    today: "UPDATE users SET ack_today_idx = ?2 WHERE id = ?1",
   }[kind];
   await d1Of(db).prepare(sql).bind(userId, idx).run();
 }
@@ -103,4 +105,22 @@ export async function setPause(userId: number, until: number | null, db: Db): Pr
 // Тихі години (S2.11): `from === to` — тихих годин немає. Діє з наступного тика, `pending` не переписуються.
 export async function setQuiet(userId: number, from: number, to: number, db: Db): Promise<void> {
   await d1Of(db).prepare("UPDATE users SET quiet_from = ?2, quiet_to = ?3 WHERE id = ?1").bind(userId, from, to).run();
+}
+
+// Параметри оглядів (S3.1): чат, пояс, години, день тижня й пам'ять теплої фрази. Окремо від `User`, як `Delivery`.
+export interface DigestUser {
+  tg_id: number;
+  tz: string;
+  morning_at: number;
+  evening_at: number;
+  weekly_dow: number;
+  warm_at: number | null;
+  warm_variant_idx: number | null;
+}
+
+export async function getDigestUser(userId: number, db: Db): Promise<DigestUser | null> {
+  return d1Of(db)
+    .prepare("SELECT tg_id, tz, morning_at, evening_at, weekly_dow, warm_at, warm_variant_idx FROM users WHERE id = ?1")
+    .bind(userId)
+    .first<DigestUser>();
 }
