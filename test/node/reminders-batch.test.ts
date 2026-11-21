@@ -21,6 +21,21 @@ describe("S2.6 selectBatch (чиста функція)", () => {
     expect(p).toEqual({ singles: [], summary: [], wait: [row(9)] });
   });
 
+  it("2.6.g (R-2, Б2): вікно зведення зайняте — «час виходити» (noWait) іде окремо навіть понад ліміт, решта чекає", () => {
+    const leave = row(4, 1000, { noWait: true });
+    // п.1: 2 повтори зі зведення → «усе чекає», крім noWait
+    const p1 = selectBatch([row(1, 10 * MIN, { parentSentAs: "summary" }), row(2, 10 * MIN, { parentSentAs: "summary" }), leave], ctx({ summariesLastHour: 1 }));
+    expect(ids(p1.singles)).toEqual([4]);
+    expect(ids(p1.wait)).toEqual([1, 2]);
+    // п.3: ліміт окремих вичерпано, вікно зайняте → noWait однаково йде, звичайний чекає
+    const p3 = selectBatch([row(5), leave], ctx({ singlesLastHour: 6, summariesLastHour: 1 }));
+    expect(ids(p3.singles)).toEqual([4]);
+    expect(ids(p3.wait)).toEqual([5]);
+    // вікно вільне → noWait у зведенні разом з усіма (виняток лише замість «чекають»)
+    const pf = selectBatch([row(1, 10 * MIN), row(2, 10 * MIN), leave], ctx());
+    expect(ids(pf.summary)).toEqual([1, 2, 4]);
+  });
+
   it("2.6.e: 2 запізнілих + 1 свіжий → одне зведення з трьох", () => {
     const p = selectBatch([row(1, 10 * MIN), row(2, 8 * MIN), row(3)], ctx());
     expect(p.singles).toEqual([]);

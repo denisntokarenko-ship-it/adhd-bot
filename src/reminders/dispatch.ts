@@ -22,7 +22,7 @@ import { getDelivery } from "../db/users";
 import type { AppEnv } from "../env";
 import { formatDue } from "../format";
 import { SUMMARY_HEAD_POOL, pickVariant } from "../texts";
-import { CLAIM_LIMIT, RUN_BUDGET_MS, STALE_MS, leaveMoot, nextRepeat, selectBatch, type BatchRow } from "./plan";
+import { CLAIM_LIMIT, RUN_BUDGET_MS, STALE_MS, leaveMoot, nextRepeat, selectBatch, timedEvent, type BatchRow } from "./plan";
 import { poolFor, singleMessage, summaryMessage, type SummaryLine } from "./render";
 
 export interface DispatchDeps {
@@ -90,9 +90,10 @@ interface Ctx {
 
 const overBudget = (c: Ctx) => c.clock.now() - c.start >= RUN_BUDGET_MS;
 
-// Наступна спроба ланцюга від ФАКТИЧНОЇ відправки (S2.2.d); для подій спроба після початку не створюється (S2.2.e).
+// Наступна спроба ланцюга від ФАКТИЧНОЇ відправки (S2.2.d); для подій з часом спроба після початку не створюється
+// (S2.2.e). Подія `all_day` — як задача: її `due_at` (північ) не обрізає ланцюг (рев'ю R-2, Б1).
 const nextFor = (r: Reminder, item: Item, sentAt: number): NextAttempt | null =>
-  nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: sentAt }, item.kind === "event" ? item.due_at : null);
+  nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: sentAt }, timedEvent(item) ? item.due_at : null);
 
 async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promise<void> {
   const { db } = c;
@@ -121,6 +122,7 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
     fireAt: r.fire_at,
     important: item.priority === "important",
     parentSentAs: r.parent_id === null ? null : (parents.get(r.parent_id) ?? null),
+    noWait: timedEvent(item) && (r.kind === "leave_now" || r.kind === "repeat"), // S2.6 п.1, виняток R-2 Б2
   }));
   const plan = selectBatch(batchRows, { now, singlesLastHour: counts.singles, summariesLastHour: counts.summaries });
 
@@ -138,7 +140,7 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
     const choice = poolFor(r.kind, r.attempt);
     const idx = pickVariant(choice.pool.length, await lastVariantIdx(userId, db, choice.kinds, choice.attempt), c.rand);
     // «Напередодні» і «час виходити» без часу події безглузді (S2.7.f); так само повтор ланцюга події з часом.
-    const withWhen = fresh.due_at !== null && (r.kind === "eve_before" || r.kind === "leave_now" || (r.kind === "repeat" && fresh.kind === "event" && fresh.all_day === 0));
+    const withWhen = fresh.due_at !== null && (r.kind === "eve_before" || r.kind === "leave_now" || (r.kind === "repeat" && timedEvent(fresh)));
     const when = withWhen ? formatDue(fresh.due_at!, fresh.all_day === 1, dl.tz, c.clock.now()) : undefined;
     const msg = singleMessage(choice.pool[idx] ?? choice.pool[0] ?? "", fresh.title, r.id, r.kind, when);
     let sent: { message_id: number };

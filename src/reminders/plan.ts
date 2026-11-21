@@ -113,12 +113,18 @@ export function nextRepeat(row: RepeatSource, eventDueAt: number | null = null):
   return null;
 }
 
+// «Подія з часом» (рев'ю R-2, Б1) — ЄДИНА відповідь на це питання для повторів (`nextFor`), «після початку»
+// (`leaveMoot`), часу в тексті повтору й анти-шуму (`noWait`). Подія `all_day` — не подія з часом: її `due_at` —
+// локальна північ, нагадування — `due` о `morning_at`, і повтори в неї як у задачі (рівно `max_attempts`).
+export const timedEvent = (item: { kind: string; all_day: number; due_at: number | null }): boolean =>
+  item.kind === "event" && item.all_day === 0 && item.due_at !== null;
+
 // «Час виходити» (leave_now) чи його повтор для події з часом, якщо подія вже почалась: докір, не допомога
 // (S2.2.e). Перевіряється ПЕРЕД відправкою, бо тиша, анти-шум чи збій Telegram могли затримати рядок за `due_at`
 // (живий прогін 2.2: повтор item 31 пішов о 08:01 при події 08:00). `repeat` події з часом — завжди ланцюг leave_now.
 export function leaveMoot(r: { kind: string }, item: { kind: string; all_day: number; due_at: number | null }, now: number): boolean {
   if (r.kind !== "leave_now" && r.kind !== "repeat") return false;
-  return item.kind === "event" && item.all_day === 0 && item.due_at !== null && now >= item.due_at;
+  return timedEvent(item) && now >= item.due_at!;
 }
 
 export interface QuietUser {
@@ -179,6 +185,7 @@ export interface BatchRow {
   fireAt: number;
   important: boolean;
   parentSentAs: "single" | "summary" | null; // як пішов батько повтору; null — не повтор
+  noWait?: boolean; // ланцюг «час виходити» події з часом: ніколи не чекає (S2.6 п.1, виняток R-2 Б2)
 }
 
 export interface BatchCtx {
@@ -197,7 +204,16 @@ export interface BatchPlan {
 // 1) ≥ 2 «запізнілих» (fire_at ≤ now − LATE_MS) АБО ≥ 2 повторів, чий батько пішов зведенням → усе, що зараз у черзі,
 //    одним зведенням (пуш слідом за зведенням — шум); зведення в останню годину вже було → усе чекає;
 // 2) інакше окремо, поки не вичерпано PUSH_SINGLE_PER_HOUR; 3) що не влізло → одне зведення, якщо вікно вільне.
+// Виняток (R-2, Б2): `noWait`-рядки замість «чекають» ідуть окремо (і рахуються в ліміт, бо стають `single`) —
+// «час виходити», що дочекався початку події, гасне мовчки.
 export function selectBatch(rows: BatchRow[], ctx: BatchCtx): BatchPlan {
+  const p = selectBatchCore(rows, ctx);
+  const go = p.wait.filter((r) => r.noWait === true);
+  if (go.length === 0) return p;
+  return { singles: [...p.singles, ...go], summary: p.summary, wait: p.wait.filter((r) => r.noWait !== true) };
+}
+
+function selectBatchCore(rows: BatchRow[], ctx: BatchCtx): BatchPlan {
   const sorted = [...rows].sort((a, b) => Number(b.important) - Number(a.important) || a.fireAt - b.fireAt || a.id - b.id);
   const summaryFree = ctx.summariesLastHour < PUSH_SUMMARY_PER_HOUR;
   const late = sorted.filter((r) => r.fireAt <= ctx.now - LATE_MS).length;
