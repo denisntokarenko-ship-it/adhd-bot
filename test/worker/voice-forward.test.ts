@@ -2,7 +2,7 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiClient, AiRequest } from "../../src/ai/client";
-import { MAX_VOICE_SECONDS, STT_LANGUAGE, STT_MODEL, createStt, type Stt } from "../../src/ai/stt";
+import { MAX_VOICE_SECONDS, STT_INITIAL_PROMPT, STT_LANGUAGE, STT_MODEL, createStt, type Stt } from "../../src/ai/stt";
 import type { BotDeps } from "../../src/bot";
 import {
   FIX_FAILED_POOL,
@@ -233,10 +233,19 @@ describe("S1.7 голосове", () => {
     });
     expect(await stt.transcribe(new Uint8Array([79, 103, 103, 83]).buffer)).toBe("привіт");
     expect(calls).toEqual([
-      { model: "@cf/openai/whisper-large-v3-turbo", input: { audio: "T2dnUw==", language: "uk", task: "transcribe", vad_filter: true } },
+      { model: "@cf/openai/whisper-large-v3-turbo", input: { audio: "T2dnUw==", language: "uk", task: "transcribe", vad_filter: true, initial_prompt: STT_INITIAL_PROMPT } },
     ]);
     expect([STT_MODEL, STT_LANGUAGE]).toEqual(["@cf/openai/whisper-large-v3-turbo", "uk"]);
     expect(await count("ai_calls")).toBe(0);
+  });
+
+  it("2.12.a: initial_prompt — одне українське речення з порядковими числівниками; без нього (null) виклик як до 2.4", async () => {
+    expect(STT_INITIAL_PROMPT).toMatch(/п'ятнадцятого/);
+    expect(STT_INITIAL_PROMPT.split(/[.!?]/).filter((x) => x.trim() !== "")).toHaveLength(1);
+    const inputs: Record<string, unknown>[] = [];
+    await createStt({ run: async (_m, input) => (inputs.push(input), { text: "ок" }) }, undefined, null).transcribe(new ArrayBuffer(1));
+    expect(inputs[0]).toEqual({ audio: expect.any(String), language: "uk", task: "transcribe", vad_filter: true });
+    expect(inputs[0]).not.toHaveProperty("initial_prompt");
   });
 
   it("STT: відповідь без тексту → порожній рядок; завислий виклик → таймаут", async () => {

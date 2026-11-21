@@ -16,6 +16,7 @@ export const PUSH_SUMMARY_PER_HOUR = 1; // зведень на ковзну го
 export const SUMMARY_LINES = 5; // рядків у зведенні, решта — кнопкою
 export const DONE_POINTS = 10; // очки ✅ (S2.4.a)
 export const HOUR_MS = 3_600_000;
+export const PAUSE_MAX_H = 24; // `/pause N`: ціле 1–24 год (S2.9.e)
 export const PLAN_LIMIT = 50; // записів за тик планувальника
 export const EVE_AT_MIN = 20 * 60; // «навечір» — 20:00 попереднього дня
 export const EVE_MIN_LEAD_MS = 5 * MIN; // eve_before лише якщо ще попереду більш ніж на 5 хв
@@ -154,6 +155,13 @@ export function shiftForQuiet(fireAt: number, user: QuietUser): number {
     if (!moved) break;
   }
   return t;
+}
+
+// Найближча ЛОКАЛЬНА мить `minute` (хвилини доби) СТРОГО після `now`: «до ранку» = наступне `quiet_to` (S2.9.e).
+// Доба — у `tz`, не в UTC; о 08:00:00 рівно «наступне 08:00» — завтра.
+export function nextLocalMinute(now: number, minute: number, tz: string): number {
+  const today = wallToUtc(localDate(now, tz), minute, tz);
+  return today > now ? today : wallToUtc(shiftDate(localDate(now, tz), 1), minute, tz);
 }
 
 export type SnoozeAction = "s15" | "s60" | "tom";

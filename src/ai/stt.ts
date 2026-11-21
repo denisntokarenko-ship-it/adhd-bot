@@ -7,6 +7,10 @@ export const STT_TIMEOUT_MS = 20_000;
 export const MAX_VOICE_SECONDS = 300; // припущення (open-questions.md): довше — «розріж на частини»
 export const MIN_TEXT_CHARS = 2;
 
+// S2.12.a: одне українське речення з порядковими числівниками підштовхує Whisper до «п'ятнадцятого», а не «5-го».
+// Не доведено виміром (S2.12.b, 👤 `docs/notes/whisper-uk.md`): не покращить — прибрати й записати «не допомагає».
+export const STT_INITIAL_PROMPT = "Зустріч п'ятнадцятого листопада, дедлайн двадцять п'ятого, а відпустка з першого грудня.";
+
 // vad_filter: без нього Whisper на тиші/шумі видає «Дякую за перегляд!» (перевірено живцем) — фантомний запис.
 // Те, що потрібно від Workers AI: один виклик моделі. У тестах — мок.
 export interface Stt {
@@ -24,7 +28,8 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(bin);
 }
 
-export function createStt(ai: WorkersAiBinding, timeoutMs = STT_TIMEOUT_MS): Stt {
+// `initialPrompt = null` — виклик як до 2.4 (без параметра).
+export function createStt(ai: WorkersAiBinding, timeoutMs = STT_TIMEOUT_MS, initialPrompt: string | null = STT_INITIAL_PROMPT): Stt {
   return {
     async transcribe(audio) {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -33,7 +38,13 @@ export function createStt(ai: WorkersAiBinding, timeoutMs = STT_TIMEOUT_MS): Stt
       });
       try {
         const out = (await Promise.race([
-          ai.run(STT_MODEL, { audio: toBase64(audio), language: STT_LANGUAGE, task: "transcribe", vad_filter: true }),
+          ai.run(STT_MODEL, {
+            audio: toBase64(audio),
+            language: STT_LANGUAGE,
+            task: "transcribe",
+            vad_filter: true,
+            ...(initialPrompt === null ? {} : { initial_prompt: initialPrompt }),
+          }),
           limit,
         ])) as { text?: unknown } | null;
         return typeof out?.text === "string" ? out.text.trim() : "";

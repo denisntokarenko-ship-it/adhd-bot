@@ -50,14 +50,14 @@ const ROOT_KINDS: string[] = ["due", "eve_before", "leave_now"];
 
 export const isReminderCallback = (data: string | undefined) => data !== undefined && (RM_RE.test(data) || SM_RE.test(data) || TR_RE.test(data));
 
-async function pickAck(d: ButtonDeps, kind: AckKind, pool: readonly string[]): Promise<string> {
+export async function pickAck(d: ButtonDeps, kind: AckKind, pool: readonly string[]): Promise<string> {
   const idx = pickVariant(pool.length, await getAckIdx(d.user.id, kind, d.db), d.rand);
   await setAckIdx(d.user.id, kind, idx, d.db);
   return pool[idx] ?? pool[0] ?? "";
 }
 
 // Редагування повідомлення — best effort: його збій не скасовує зміну стану й не ламає відповідь на callback (S2.4.j).
-async function edit(ctx: Context, text: string, keyboard: { text: string; callback_data: string }[][] = []): Promise<void> {
+export async function edit(ctx: Context, text: string, keyboard: { text: string; callback_data: string }[][] = []): Promise<void> {
   try {
     await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } });
   } catch {
