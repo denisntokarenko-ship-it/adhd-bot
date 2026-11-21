@@ -4,6 +4,7 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiClient } from "../../src/ai/client";
 import { planDigests } from "../../src/digests/planner";
+import { morningMessage } from "../../src/digests/render";
 import { openDb } from "../../src/db/index";
 import { create, search, type NewItem } from "../../src/db/items";
 import { ensureUser } from "../../src/db/users";
@@ -781,5 +782,18 @@ describe("НФ-4 / правило 4: огляди без докору й без 
     await press("dg:all");
     for (const c of [...sentCalls(tg), ...edits(tg)]) expect(tone(textOf(c)), textOf(c)).toEqual([]);
     for (const c of sentCalls(tg).filter(morning)) expect(textOf(c)).not.toMatch(/\d+ (справ|завдан)/);
+  });
+});
+
+describe("НФ-9: довгий перелік обрізається «…ще N» (S3.2.d)", () => {
+  it("«показати все» на 300 справах вкладається в 4096 символів, службові рядки лишаються, N = обрізані", () => {
+    const tasks = Array.from({ length: 300 }, (_, i) => ({ id: i + 1, title: `Справа ${i + 1} ${"я".repeat(70)}`, due_at: null, all_day: 0, priority: "normal" as const, created_at: i }));
+    const m = morningMessage({ head: "Ранок", events: [], tasks, all: true, tz: "Europe/Kyiv", dayStart: 0, dayEnd: 1 });
+    expect(m.text.length).toBeLessThanOrEqual(4096);
+    const lines = m.text.split("\n");
+    expect(lines[0]).toBe("Ранок");
+    const shown = lines.filter((l) => l.startsWith("• ")).length;
+    expect(lines.at(-1)).toBe(`…ще ${300 - shown}`);
+    expect(m.keyboard).toEqual([]);
   });
 });

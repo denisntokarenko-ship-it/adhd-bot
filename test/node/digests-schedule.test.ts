@@ -1,5 +1,4 @@
 // Розклад оглядів (docs/spec/phase-3.md, S3.1.j–k): `nextDigestAt` — чиста функція, час фіксований (НФ-1, НФ-11).
-import { morningMessage } from "../../src/digests/render";
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nextDigestAt, localDayDiff, type DigestSettings } from "../../src/digests/schedule";
@@ -77,18 +76,5 @@ describe("S3.1.i / правило 4: код оглядів не імпортує
       expect(text, f.pathname).not.toMatch(/from\s+["'][^"']*\/ai\//);
       expect(text, f.pathname).not.toMatch(/routine/i);
     }
-  });
-});
-
-describe("НФ-9: довгий перелік обрізається «…ще N» (S3.2.d)", () => {
-  it("«показати все» на 300 справах вкладається в 4096 символів, службові рядки лишаються, N = обрізані", () => {
-    const tasks = Array.from({ length: 300 }, (_, i) => ({ id: i + 1, title: `Справа ${i + 1} ${"я".repeat(70)}`, due_at: null, all_day: 0, priority: "normal" as const, created_at: i }));
-    const m = morningMessage({ head: "Ранок", events: [], tasks, all: true, tz: "Europe/Kyiv", dayStart: 0, dayEnd: 1 });
-    expect(m.text.length).toBeLessThanOrEqual(4096);
-    const lines = m.text.split("\n");
-    expect(lines[0]).toBe("Ранок");
-    const shown = lines.filter((l) => l.startsWith("• ")).length;
-    expect(lines.at(-1)).toBe(`…ще ${300 - shown}`);
-    expect(m.keyboard).toEqual([]);
   });
 });

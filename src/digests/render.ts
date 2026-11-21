@@ -1,6 +1,6 @@
 // Тексти й кнопки оглядів (docs/spec/phase-3.md, S3.2–S3.6). Чисті функції, без БД. Назви екрануються й обрізаються
 // (НФ-9); callback-дані — `dg:all`, `wk:t|s|r:<itemId>` (≤ 64 байти). Нічого про прострочення: давніша дата не показується.
-import type { DigestItem } from "../db/digests";
+import type { DigestItem } from "./types";
 import { TG_LIMIT } from "../format";
 import { clipTitle, type Keyboard } from "../reminders/render";
 import {

@@ -1,17 +1,11 @@
 // Дані оглядів (docs/spec/phase-3.md, S3.1–S3.6). Кожна функція — з `userId` першим (НФ-3); огляди читають лише
 // `items`, `points_ledger` і `reminders`, ніколи `routines` (правило 4). Вибірка «кому бракує огляду» — `system.ts`.
 import type { DigestKind } from "../digests/schedule";
+import type { DigestItem } from "../digests/types";
 import { d1Of, type Db } from "./index";
 import type { Reminder } from "./reminders";
 
-export interface DigestItem {
-  id: number;
-  title: string;
-  due_at: number | null;
-  all_day: number;
-  priority: "normal" | "important";
-  created_at: number;
-}
+export type { DigestItem };
 
 const COLS = "i.id AS id, i.title AS title, i.due_at AS due_at, i.all_day AS all_day, i.priority AS priority, i.created_at AS created_at";
 const OPEN_LIMIT = 200;
