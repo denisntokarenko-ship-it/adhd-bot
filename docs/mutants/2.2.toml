@@ -1,0 +1,115 @@
+test = "npx vitest run --project workers --reporter=dot test/worker/dispatch.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/db/reminders.ts"
+old = '''      .prepare("UPDATE items SET status = 'done', done_at = ?3 WHERE id = ?2 AND user_id = ?1 AND status = 'open'")'''
+new = '''      .prepare("UPDATE items SET status = 'done', done_at = ?3 WHERE id = ?2 AND user_id = ?1")'''
+why = "прибрати перевірку «вже done» перед закриттям: повторний ✅ знов «закриває» запис (done_at зсувається, відповідь «Зроблено!» замість «це вже зроблено») -> червоніє подвійний ✅"
+match = "2.4.a/b"
+
+[[mutant]]
+id = "M1b"
+file = "src/db/points.ts"
+old = '''SELECT ?1, ?4, 'done', id, ?3 FROM items WHERE id = ?2 AND user_id = ?1 AND status = 'open''''
+new = '''SELECT ?1, ?4, 'done', id, ?3 FROM items WHERE id = ?2 AND user_id = ?1'''
+why = "очки без умови open: ux_ledger_done відсікає друге +10 за той самий запис, але НЕ захищає released — ✅ зі старого повідомлення на відпущений запис дав би очко -> червоніє 2.4.i (не еквівалент: перевірено мутацією)"
+match = "2.4.i"
+
+[[mutant]]
+id = "M2"
+file = "src/db/reminders.ts"
+old = '''    doneStatement(userId, db, itemId, now),
+    d1
+      .prepare(`UPDATE reminders SET status = 'cancelled', lease_until = NULL WHERE user_id = ?1 AND item_id = ?2 AND status = 'pending' AND ${ITEM_OPEN}`)'''
+new = '''    doneStatement(userId, db, itemId, now),
+    d1
+      .prepare(`UPDATE reminders SET status = 'cancelled', lease_until = NULL WHERE user_id = ?1 AND item_id = ?2 AND status = 'never' AND ${ITEM_OPEN}`)'''
+why = "✅ без answer (pending запису не скасовуються): нащадок повтору лишається pending -> червоніє «повтор не йде»"
+match = "2.5.e/2.2.f"
+
+[[mutant]]
+id = "M3"
+file = "src/reminders/plan.ts"
+old = '''export const PUSH_SINGLE_PER_HOUR = 6;'''
+new = '''export const PUSH_SINGLE_PER_HOUR = 60;'''
+why = "поріг окремих пушів 6 -> 60: 8 нагадувань підуть вісьмома окремими -> червоніє тест зведення"
+match = "2.6.a"
+
+[[mutant]]
+id = "M4"
+file = "src/db/reminders.ts"
+old = '''         WHERE id = ?1 AND user_id = ?2 AND status = 'pending'`,
+      )
+      .bind(r.id, userId, f.sentAt, f.sentAs, f.tgMessageId, f.variantIdx),'''
+new = '''         WHERE id = ?1 AND user_id = ?2`,
+      )
+      .bind(r.id, userId, f.sentAt, f.sentAs, f.tgMessageId, f.variantIdx),'''
+why = "закриття без status='pending': ✅ між sendMessage і закриттям «воскрешає» скасований рядок у sent і не дає прибрати повідомлення -> червоніє 2.5.c"
+match = "2.5.c"
+
+[[mutant]]
+id = "M5"
+file = "src/db/reminders.ts"
+old = '''         WHERE i.id = ?2 AND i.user_id = ?1 AND i.status = 'open' AND ${pressedSent}
+         ON CONFLICT DO NOTHING`,'''
+new = '''         WHERE i.id = ?2 AND i.user_id = ?1 AND i.status = 'open'
+         ON CONFLICT DO NOTHING`,'''
+why = "новий корінь ⏰ без умови «натиснутий ще sent»: подвійний тап (пізніше) створює другий корінь -> червоніє 2.4.e/f"
+match = "2.4.e/f"
+
+[[mutant]]
+id = "M6"
+file = "src/reminders/buttons.ts"
+old = '''if (action === "ack" || (action === "ok" && r.kind === "eve_before")) {'''
+new = '''if (action === "ack") {'''
+why = "ok на eve_before (стара клавіатура) не трактується як ack і закриває запис -> червоніє 2.4.l"
+match = "2.4.l"
+
+[[mutant]]
+id = "M7"
+file = "src/reminders/plan.ts"
+old = '''if (late >= 2 || fromSummary >= 2) {'''
+new = '''if (late >= 2) {'''
+why = "п.1 S2.6 без parentSentAs: нащадки рядків-зі-зведення йдуть окремими пушами -> червоніє 2.6.f"
+match = "2.6.f"
+test = "npx vitest run --project node --reporter=dot test/node/reminders-batch.test.ts"
+
+[[mutant]]
+id = "M8"
+file = "src/reminders/dispatch.ts"
+old = '''if (err.error_code === 400 || err.error_code === 403) return { kind: "dead", code: err.error_code };'''
+new = '''if (err.error_code === 400) return { kind: "dead", code: err.error_code };'''
+why = "403 (бота заблоковано) не гасить рядок, а повторюється без кінця -> червоніє «403 → cancelled»"
+match = "403"
+
+[[mutant]]
+id = "M9"
+file = "src/reminders/dispatch.ts"
+old = '''const claimed = await claimDueReminders(db, start, CLAIM_LIMIT, quiet);'''
+new = '''const claimed = await claimDueReminders(db, start, CLAIM_LIMIT, []);'''
+why = "множина тихих користувачів не передається в claim: бот пише вночі -> червоніє 2.9.a"
+match = "2.9.a"
+
+[[mutant]]
+id = "M10"
+file = "src/reminders/dispatch.ts"
+old = '''await releaseLeases(db, [...unsent]);'''
+new = '''await releaseLeases(db, []);'''
+why = "нерозіслані рядки не віддають оренду: зависають на LEASE_MS -> червоніє 2.3.e (бюджет)"
+match = "2.3.e"
+
+[[mutant]]
+id = "M11"
+file = "src/reminders/dispatch.ts"
+old = '''    if (item === undefined || item.status !== "open") {
+      await cancelOne(userId, db, r.id);
+      c.unsent.delete(r.id);
+    } else live.push({ r, item });'''
+new = '''    if (item === undefined) {
+      await cancelOne(userId, db, r.id);
+      c.unsent.delete(r.id);
+    } else live.push({ r, item });'''
+why = "рання перевірка «запис open» прибрана — лишається лише перевірка безпосередньо перед відправкою (2.5.b): закриті записи займають місце в добору (6 окремих + зведення з одного замість 5 окремих) -> червоніє «закриті записи не займають місця»"
+match = "закриті записи не займають місця"

@@ -92,6 +92,16 @@ export async function create(userId: number, db: Db, input: NewItem, now: number
   return row;
 }
 
+// Кілька записів одним запитом (відправка нагадувань: статус і назва перед `sendMessage`). Чужі id мовчки відсіюються.
+export async function listByIds(userId: number, db: Db, ids: number[]): Promise<Item[]> {
+  if (ids.length === 0) return [];
+  const res = await d1Of(db)
+    .prepare(`SELECT ${COLUMNS} FROM items WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2))`)
+    .bind(userId, JSON.stringify(ids))
+    .all<Item>();
+  return res.results;
+}
+
 export async function getById(userId: number, db: Db, id: number): Promise<Item | null> {
   return d1Of(db)
     .prepare(`SELECT ${COLUMNS} FROM items WHERE id = ?1 AND user_id = ?2`)

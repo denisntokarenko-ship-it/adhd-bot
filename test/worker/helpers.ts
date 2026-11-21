@@ -27,8 +27,17 @@ export interface TgCall {
 }
 
 // Підміняє fetch: жодних реальних викликів Telegram (НФ-11). Записує кожен виклик API.
-export function mockTelegram(opts: { failSend?: boolean; failDownload?: boolean } = {}) {
+export interface SendError {
+  code: number; // HTTP/Telegram-код відповіді на sendMessage: 429, 403, 500…
+  retryAfter?: number;
+  // яким за рахунком викликам sendMessage (1-based) віддавати помилку; за замовчуванням — усім
+  only?: number[];
+}
+
+export function mockTelegram(opts: { failSend?: boolean; failDownload?: boolean; seqIds?: boolean; failMethods?: string[]; sendError?: SendError; onSend?: (n: number) => Promise<void> | void } = {}) {
   const calls: TgCall[] = [];
+  let sends = 0;
+  let seq = 100;
   const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.includes("/file/bot")) {
@@ -68,9 +77,23 @@ export function mockTelegram(opts: { failSend?: boolean; failDownload?: boolean 
     }
     calls.push({ method, body });
     if (opts.failSend) throw new TypeError("network down");
+    if (opts.failMethods?.includes(method)) {
+      return new Response(JSON.stringify({ ok: false, error_code: 400, description: "mock 400" }), { status: 400, headers: { "content-type": "application/json" } });
+    }
+    if (method === "sendMessage") {
+      sends += 1;
+      await opts.onSend?.(sends);
+      const e = opts.sendError;
+      if (e !== undefined && (e.only === undefined || e.only.includes(sends))) {
+        return new Response(
+          JSON.stringify({ ok: false, error_code: e.code, description: `mock ${e.code}`, ...(e.retryAfter === undefined ? {} : { parameters: { retry_after: e.retryAfter } }) }),
+          { status: e.code, headers: { "content-type": "application/json" } },
+        );
+      }
+    }
     const result =
       method === "sendMessage" || method === "sendDocument"
-        ? { message_id: 1, date: 0, chat: { id: 1, type: "private" } }
+        ? { message_id: opts.seqIds ? ++seq : 1, date: 0, chat: { id: 1, type: "private" } }
         : method === "getFile"
           ? { file_id: String(body.file_id), file_unique_id: "u", file_path: "voice/file_1.oga" }
           : true;

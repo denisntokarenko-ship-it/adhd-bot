@@ -129,3 +129,57 @@ export function clarifyReason(kind: "unclear" | "event_no_date" | "past" | "bad_
       return "коли саме?";
   }
 }
+
+// ── Нагадування (крок 2.2). Голова повідомлення над `<b>назвою</b>`; провини немає ні в кого (НФ-4, правило 6). ──
+// Повторюються лише слова «ще раз»/«востаннє»: наростає наполегливість, але не докір. Розширення пулів до ≥ 5 — крок 2.4.
+export const REMIND_DUE_POOL: readonly string[] = ["⏰ Саме час:", "Нагадую 📌", "Настав момент ⏰"];
+export const REMIND_REPEAT2_POOL: readonly string[] = [
+  "Тихенько нагадую ще раз 🙂",
+  "Ось воно ще раз — раптом загубилось у потоці:",
+  "Лише легка згадка 🙂",
+];
+export const REMIND_REPEAT3_POOL: readonly string[] = [
+  "Це все ще чекає на тебе 🌱",
+  "Тримаю це перед очима — може, зараз вдалий момент?",
+  "Без поспіху, просто згадка 🙂",
+];
+export const REMIND_REPEAT4_POOL: readonly string[] = [
+  "Моя остання згадка про це, далі не тисну 🤝",
+  "Нагадаю востаннє й лишу тебе в спокої 🤝",
+  "Це останнє нагадування — далі воно чекатиме в огляді 🤝",
+];
+export const REMIND_EVE_POOL: readonly string[] = ["Завтра в планах 📅", "Напередодні: завтра ось що 📅", "Дружній вечірній сигнал 🌙 Завтра:"];
+export const REMIND_LEAVE_POOL: readonly string[] = ["Час виходити 🚶", "Пора збиратись у дорогу 🚶", "Виходимо — часу якраз вистачить 🚶"];
+
+// Зведення (S2.6): одне повідомлення замість пачки пушів.
+export const SUMMARY_HEAD_POOL: readonly string[] = [
+  "Зібрав усе в одне повідомлення, щоб не сипати пушами 📋",
+  "Їх набралось кілька — тримай одним списком 📋",
+  "Не буду засипати тебе окремими — ось усе разом 📋",
+];
+
+// Відповіді на кнопки. Тост ✅ згадує очко (як «+1 ✨» у квитанції); без бонусів за точність (правило 6).
+export const ACK_OK_POOL: readonly string[] = ["Зроблено! +10 ✨", "Є! +10 ✨", "Красунчик 💪 +10 ✨"];
+export const ACK_LATER_POOL: readonly string[] = ["⏰ Ок, нагадаю", "⏰ Гаразд, нагадаю", "⏰ Добре, тоді нагадаю"];
+export const ACK_REL_POOL: readonly string[] = [
+  "Відпустив. Знайдеш пошуком, якщо що",
+  "Відпустив 🕊️ Знайдеш пошуком, якщо що",
+  "Лишаю в архіві 🕊️ Знайдеш пошуком, якщо що",
+];
+export const ALREADY_DONE_POOL: readonly string[] = ["це вже зроблено 👍", "вже зроблено, усе гаразд 👍", "це вже закрито 👍"];
+export const ALREADY_RELEASED = "вже відпущено";
+export const ALREADY_SNOOZED = "вже відклав";
+export const UNKNOWN_REMINDER = "не знаю такого";
+export const EVE_ACK_TAIL = "ок"; // «👍 <b>назва</b> — ок»
+export const DONE_TAIL = "зроблено"; // «✅ <b>назва</b> — зроблено»
+export const BTN_DONE = "✅";
+export const BTN_ACK = "👍";
+export const BTN_SNOOZE = "⏰";
+export const BTN_RELEASE = "🗑";
+export const BTN_S15 = "+15 хв";
+export const BTN_S60 = "+1 год";
+export const BTN_BACK = "← назад";
+export const BTN_TOMORROW_PREFIX = "Завтра о";
+export const BTN_ALL_S60 = "⏰ Усе на +1 год";
+export const BTN_ALL_TOM = "⏰ Усе на завтра";
+export const BTN_MORE_PREFIX = "Показати ще";

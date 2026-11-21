@@ -25,6 +25,7 @@ describe("S0.2 /health", () => {
       sha: "abc123def456",
       cron: { last_run_at: NOW - 40_000, age_s: 40, stale: false },
       queue: { pending: 0 },
+      reminders: { due: 0 }, // S2.3.g
     });
   });
 
@@ -64,7 +65,7 @@ describe("S0.2 /health", () => {
     await setHeartbeat(NOW);
     const body = (await (await get(baseEnv({ GIT_SHA: undefined }))).json()) as Record<string, unknown>;
     expect(body.sha).toBe("unknown");
-    expect(Object.keys(body).sort()).toEqual(["cron", "env", "ok", "queue", "sha"]);
+    expect(Object.keys(body).sort()).toEqual(["cron", "env", "ok", "queue", "reminders", "sha"]);
   });
 
   it("POST /health → 405", async () => {

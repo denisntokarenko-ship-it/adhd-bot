@@ -119,3 +119,40 @@ export async function claimDueReminders(db: Db, now: number, limit: number, excl
     .all<Reminder>();
   return res.results.sort((a, b) => a.fire_at - b.fire_at || a.id - b.id);
 }
+
+// Старі рядки (S2.3 крок 0): `pending` з `fire_at` старшим за STALE_MS — мовчки `cancelled`, без повідомлень.
+export async function cancelStaleReminders(db: Db, now: number, staleMs: number): Promise<number> {
+  const res = await d1Of(db)
+    .prepare("UPDATE reminders SET status = 'cancelled', lease_until = NULL WHERE status = 'pending' AND fire_at < ?1")
+    .bind(now - staleMs)
+    .run();
+  return res.meta.changes ?? 0;
+}
+
+// Користувачі в режимі тиші (S2.9): пауза активна або локальна хвилина в тихих годинах. Їхніх рядків `claim` не бере.
+export async function listQuietUserIds(db: Db, now: number): Promise<number[]> {
+  const res = await d1Of(db)
+    .prepare("SELECT id, tz, quiet_from, quiet_to, pause_until FROM users")
+    .all<{ id: number; tz: string; quiet_from: number; quiet_to: number; pause_until: number | null }>();
+  return res.results
+    .filter((u) => (u.pause_until !== null && u.pause_until > now) || inQuietHours(u.quiet_from, u.quiet_to, minutesOfDay(now, u.tz)))
+    .map((u) => u.id);
+}
+
+// Нерозіслані рядки (бюджет прогону вичерпано): оренда знімається, наступний тик їх підбере (S2.3 крок 5).
+export async function releaseLeases(db: Db, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  await d1Of(db)
+    .prepare("UPDATE reminders SET lease_until = NULL WHERE status = 'pending' AND id IN (SELECT value FROM json_each(?1))")
+    .bind(JSON.stringify(ids))
+    .run();
+}
+
+// `/health.reminders.due` (S2.3.g): скільки `pending` уже варто було відправити. Без персональних даних.
+export async function countDueReminders(db: Db, now: number): Promise<number> {
+  const row = await d1Of(db)
+    .prepare("SELECT COUNT(*) AS n FROM reminders WHERE status = 'pending' AND fire_at <= ?1")
+    .bind(now)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
