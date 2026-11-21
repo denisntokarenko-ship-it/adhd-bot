@@ -346,7 +346,7 @@ describe("S1.11 /export", () => {
     expect(json.points_ledger.map((p: Json) => [p.delta, p.reason])).toEqual([[1, "capture"], [1, "capture"]]);
     expect(Object.keys(json.points_ledger[0])).toEqual(["id", "delta", "reason", "item_id", "capture_id", "created_at"]);
     expect(text).not.toMatch(/tg_id|TESTTOKEN|input_tokens|ai_calls|tg_update_id/);
-    expect(tg.sent()).toHaveLength(2); // дві квитанції на захоплення; /export — документ, не повідомлення
+    expect(tg.sent()).toHaveLength(3); // дві квитанції на захоплення + питання про дорогу для події (2.3); /export — документ, не повідомлення
   });
 
   it("1.11.b: порожній користувач → валідний JSON із порожніми масивами", async () => {

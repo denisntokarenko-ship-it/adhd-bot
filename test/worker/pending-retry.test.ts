@@ -96,7 +96,9 @@ describe("S1.5.c/d: cron підбирає pending", () => {
       { kind: "task", title: "Корм коту", source: "text" },
     ]); // нотатки-заглушки більше немає
     expect(await rows("SELECT delta, reason FROM points_ledger")).toHaveLength(1); // очко одне, з першого разу
-    expect(tg.sent()).toHaveLength(1);
+    expect(tg.sent()).toHaveLength(2); // квитанція + питання про дорогу для події (2.3)
+    expect(String(tg.sent()[1]!.body.text)).toContain("<b>Лікар</b> — "); // питання йде слідом за квитанцією повтору, а не за часом події
+    expect(JSON.stringify(tg.sent()[1]!.body.reply_markup)).toContain('"callback_data":"tr:');
     const msg = tg.sent()[0]!;
     const lines = textOf(msg).split("\n");
     expect(RETRIED_POOL).toContain(lines[0]);

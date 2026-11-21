@@ -23,6 +23,7 @@ import type { Db } from "./db/index";
 import type { User } from "./db/users";
 import { RetryableError } from "./errors";
 import { buildReceipt, type ReceiptEntry } from "./format";
+import { askTravel } from "./reminders/travel";
 import {
   CLARIFY_ASK_POOL,
   FALLBACK_POOL,
@@ -129,6 +130,10 @@ async function sendReceipt(
     reply_markup: { inline_keyboard: [r.buttons.map((b) => ({ text: b.text, callback_data: b.data }))] },
   });
   await setReceipt(d.user.id, d.db, cap.id, sent.message_id);
+  // Подія з часом → слідом питання про дорогу (S2.7.a); не кидає.
+  await askTravel({ db: d.db, userId: d.user.id, tz: d.user.tz, now, rand: d.rand }, cap.id, (text, keyboard) =>
+    ctx.reply(text, { parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } }),
+  );
 }
 
 // Запасна нотатка + коротка відповідь (S1.5.a, НФ-5). Запис не губиться ніколи.

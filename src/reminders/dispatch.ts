@@ -20,7 +20,7 @@ import { cancelStaleReminders, claimDueReminders, listQuietUserIds, releaseLease
 import { getDelivery } from "../db/users";
 import type { AppEnv } from "../env";
 import { SUMMARY_HEAD_POOL, pickVariant } from "../texts";
-import { CLAIM_LIMIT, RUN_BUDGET_MS, STALE_MS, nextRepeat, selectBatch, type BatchRow } from "./plan";
+import { CLAIM_LIMIT, RUN_BUDGET_MS, STALE_MS, leaveMoot, nextRepeat, selectBatch, type BatchRow } from "./plan";
 import { poolFor, singleMessage, summaryMessage, type SummaryLine } from "./render";
 
 export interface DispatchDeps {
@@ -102,8 +102,8 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
   const live: { r: Reminder; item: Item }[] = [];
   for (const r of claimed) {
     const item = r.item_id === null ? undefined : items.get(r.item_id);
-    if (item === undefined || item.status !== "open") {
-      await cancelOne(userId, db, r.id);
+    if (item === undefined || item.status !== "open" || leaveMoot(r, item, c.clock.now())) {
+      await cancelOne(userId, db, r.id); // і «час виходити», затриманий за початок події (S2.2.e, борг 2.2)
       c.unsent.delete(r.id);
     } else live.push({ r, item });
   }
@@ -128,7 +128,7 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
     const { r } = rowsById.get(b.id)!;
     // Перевірка безпосередньо перед відправкою: ✅ міг прийти після claim (S2.5.b).
     const [fresh] = await listByIds(userId, db, [r.item_id!]);
-    if (fresh === undefined || fresh.status !== "open") {
+    if (fresh === undefined || fresh.status !== "open" || leaveMoot(r, fresh, c.clock.now())) {
       await cancelOne(userId, db, r.id);
       c.unsent.delete(r.id);
       continue;
@@ -168,7 +168,7 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
     const sendable: { r: Reminder; item: Item }[] = [];
     for (const x of want) {
       const item = fresh.get(x.r.item_id!);
-      if (item === undefined || item.status !== "open") {
+      if (item === undefined || item.status !== "open" || leaveMoot(x.r, item, c.clock.now())) {
         await cancelOne(userId, db, x.r.id);
         c.unsent.delete(x.r.id);
       } else sendable.push({ r: x.r, item });

@@ -11,6 +11,7 @@ import {
   BTN_RELEASE,
   BTN_S15,
   BTN_S60,
+  BTN_TRAVEL_SUFFIX,
   BTN_SNOOZE,
   BTN_TOMORROW_PREFIX,
   MORE_PREFIX,
@@ -21,7 +22,7 @@ import {
   REMIND_REPEAT3_POOL,
   REMIND_REPEAT4_POOL,
 } from "../texts";
-import { SUMMARY_LINES } from "./plan";
+import { SUMMARY_LINES, TRAVEL_CHOICES } from "./plan";
 
 export const TITLE_MAX = 80;
 export interface Button {
@@ -105,4 +106,12 @@ export function summaryMessage(head: string, lines: SummaryLine[], offset: numbe
     if (left > 0) keyboard.push([{ text: `${BTN_MORE_PREFIX} ${Math.min(left, SUMMARY_LINES)}`, callback_data: `sm:${mid}:more:${offset + SUMMARY_LINES}` }]);
   }
   return { text, keyboard };
+}
+
+// Питання про дорогу (S2.7.a): голова з пулу + `<b>назва</b> — день, час`; кнопки 0 / 15 / 30 / 60 хв (`tr:<item>:<хв>`).
+export function travelMessage(head: string, title: string, dueAt: number, tz: string, now: number, itemId: number): { text: string; keyboard: Keyboard } {
+  return {
+    text: `${head}\n<b>${clipTitle(title)}</b> — ${formatDue(dueAt, false, tz, now)}`,
+    keyboard: [TRAVEL_CHOICES.map((m) => ({ text: `${m} ${BTN_TRAVEL_SUFFIX}`, callback_data: `tr:${itemId}:${m}` }))],
+  };
 }

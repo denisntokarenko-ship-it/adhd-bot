@@ -80,7 +80,7 @@ describe("S1.7 голосове", () => {
     expect(res.status).toBe(200);
 
     expect(stt.calls).toEqual([4]); // байти файлу, скачаного за getFile
-    expect(tg.calls.map((c) => c.method)).toEqual(["getFile", "download", "sendMessage"]);
+    expect(tg.calls.map((c) => c.method)).toEqual(["getFile", "download", "sendMessage", "sendMessage"]); // квитанція + питання про дорогу (2.3)
     expect(tg.calls[0]!.body).toEqual({ file_id: "VOICE_FILE" });
 
     const caps = await rows("SELECT * FROM captures");
@@ -198,7 +198,7 @@ describe("S1.7 голосове", () => {
     expect(await count("capture_fixes")).toBe(1);
     expect(ai.requests[0]!.user).toContain("<correction>\nні, це лікар завтра о десятій\n</correction>");
     expect((await rows("SELECT title FROM items")).map((i) => i.title)).toEqual(["Лікар"]);
-    expect(textOf(tg.sent().at(-1)!)).toContain("🎙 <i>ні, це лікар завтра о десятій</i>");
+    expect(textOf(tg.sent().at(-2)!)).toContain("🎙 <i>ні, це лікар завтра о десятій</i>"); // за квитанцією — питання про дорогу (2.3)
   });
 
   it("1.7.e: STT впав під час виправлення → старі записи цілі, дружня відповідь", async () => {

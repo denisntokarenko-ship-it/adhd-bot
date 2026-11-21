@@ -11,6 +11,7 @@ import {
   pressDone,
   pressRelease,
   pressSnooze,
+  setTravel,
   type Reminder,
   type SnoozeOutcome,
 } from "../db/reminders";
@@ -20,12 +21,15 @@ import {
   ACK_LATER_POOL,
   ACK_OK_POOL,
   ACK_REL_POOL,
+  ACK_TRAVEL_POOL,
   ALREADY_DONE_POOL,
   ALREADY_RELEASED,
   ALREADY_SNOOZED,
   DONE_TAIL,
   EVE_ACK_TAIL,
   SUMMARY_HEAD_POOL,
+  TRAVEL_NONE,
+  TRAVEL_STARTED,
   UNKNOWN_REMINDER,
   pickVariant,
 } from "../texts";
@@ -41,9 +45,10 @@ export interface ButtonDeps {
 
 const RM_RE = /^rm:(\d{1,15}):(ok|ack|later|s15|s60|tom|back|rel)$/;
 const SM_RE = /^sm:(\d{1,15}):(s60|tom|more:\d{1,3})$/;
+const TR_RE = /^tr:(\d{1,15}):(0|15|30|60)$/;
 const ROOT_KINDS: string[] = ["due", "eve_before", "leave_now"];
 
-export const isReminderCallback = (data: string | undefined) => data !== undefined && (RM_RE.test(data) || SM_RE.test(data));
+export const isReminderCallback = (data: string | undefined) => data !== undefined && (RM_RE.test(data) || SM_RE.test(data) || TR_RE.test(data));
 
 async function pickAck(d: ButtonDeps, kind: AckKind, pool: readonly string[]): Promise<string> {
   const idx = pickVariant(pool.length, await getAckIdx(d.user.id, kind, d.db), d.rand);
@@ -98,6 +103,25 @@ export async function handleReminderCallback(ctx: Context, d: ButtonDeps): Promi
   if (rm !== null) return handleRm(ctx, d, Number(rm[1]), rm[2]!);
   const sm = SM_RE.exec(data);
   if (sm !== null) return handleSm(ctx, d, Number(sm[1]), sm[2]!);
+  const tr = TR_RE.exec(data);
+  if (tr !== null) return handleTr(ctx, d, Number(tr[1]), Number(tr[2]));
+  return undefined;
+}
+
+// Відповідь про дорогу (S2.7.b): питання лишається повідомленням і підтверджується тим самим текстом — повторний
+// тап того самого N безпечний (нічого не змінює), інший N перепланує `leave_now` без дублів. Чужий id → «не знаю такого».
+async function handleTr(ctx: Context, d: ButtonDeps, itemId: number, minutes: number): Promise<string | undefined> {
+  const userId = d.user.id;
+  const item = await getItem(userId, d.db, itemId);
+  const dl = await getDelivery(userId, d.db);
+  if (item === null || dl === null) return UNKNOWN_REMINDER;
+  const now = d.clock.now();
+  const out = await setTravel(userId, d.db, itemId, minutes, now);
+  if (out.kind === "gone") return item.status === "done" ? stateToast("was_done", d) : item.status === "released" ? ALREADY_RELEASED : UNKNOWN_REMINDER;
+  if (out.kind === "started") return TRAVEL_STARTED;
+  const head = await pickAck(d, "travel", ACK_TRAVEL_POOL);
+  const road = minutes === 0 ? TRAVEL_NONE : `${minutes} хв`;
+  await edit(ctx, `🚶 <b>${clipTitle(item.title)}</b> — ${road}. ${head}: ${formatDue(out.fireAt, false, dl.tz, now)}`);
   return undefined;
 }
 
