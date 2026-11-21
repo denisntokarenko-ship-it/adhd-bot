@@ -545,6 +545,19 @@ describe("3.8.f ⏰ переживає зміну поясу", () => {
     expect(tg.sent()).toHaveLength(1);
   });
 
+  it("3.8.f: ⏰ лишається на своїй миті, навіть коли мить планувальника нового поясу ще попереду (Київ → Лондон о 10:30)", async () => {
+    mockTelegram();
+    const u = await user();
+    vi.setSystemTime(at("2026-11-23T08:30:00Z")); // 10:30 Київ = 08:30 Лондон
+    const item = await mk(u, { dueAt: at("2026-11-22T22:00:00Z"), allDay: true });
+    await DB.prepare("UPDATE items SET planned_at = ? WHERE id = ?").bind(NOW, item).run();
+    await rem(u, item, { kind: "due", fire_at: at("2026-11-23T07:00:00Z"), status: "sent" });
+    const snooze = await rem(u, item, { kind: "due", fire_at: at("2026-11-23T09:30:00Z"), status: "pending" }); // ⏰ → 11:30 Київ
+    await say("/tz Europe/London"); // ранок 09:00 Лондон = 09:00Z ≥ now: plannedFor дав би рядок, але це не корінь планувальника
+    const r = await rows(`item_id = ${item} AND status IN ('pending','cancelled')`);
+    expect(r.map((x) => [x.id, x.status, iso(x.fire_at)])).toEqual([[snooze, "pending", "2026-11-23T09:30:00Z"]]);
+  });
+
   it("корінь планувальника, чия нова мить уже позаду, лишається й приходить: 09:00 Лісабон → /tz Kyiv о 08:30 Лісабон", async () => {
     const tg = mockTelegram();
     const u = await user();

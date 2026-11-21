@@ -60,8 +60,8 @@ match = "3.8.c"
 [[mutant]]
 id = "M8"
 file = "src/db/settings.ts"
-old = '''AND item_id IS NOT NULL AND (lease_until IS NULL OR lease_until <= ?2)`,'''
-new = '''AND item_id IS NOT NULL AND (lease_until IS NULL OR lease_until <= ?2 OR 1)`,'''
+old = '''AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?3)`,'''
+new = '''AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?3 OR 1)`,'''
 why = "корінь під активною орендою теж переноситься (його вже відправляють) -> червоніє «корінь під активною орендою»"
 match = "активною орендою"
 

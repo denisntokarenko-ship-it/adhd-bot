@@ -57,7 +57,7 @@ interface Transfer {
   maxAttempts: number;
 }
 
-// Корені ПЛАНУВАЛЬНИКА, що переносяться (S3.7, рев'ю 3.0 В3): `pending` корінь без активної оренди, чий `fire_at` збігається з
+// Корені ПЛАНУВАЛЬНИКА, що переносяться (S3.7, рев'ю 3.0 В3): `pending` корінь, чий `fire_at` збігається з
 // миттю формули планувальника на СТАРИХ налаштуваннях і для якого `plannedFor` на нових дає рядок того ж `kind`.
 // Корені ⏰ (інша мить) і корені, для яких нова мить уже позаду, лишаються як є.
 function planTransfers(
@@ -107,10 +107,9 @@ export async function applySetting(userId: number, db: Db, change: SettingChange
     const rootsRes = await d1
       .prepare(
         `SELECT id, item_id, kind, fire_at FROM reminders
-         WHERE user_id = ?1 AND status = 'pending' AND parent_id IS NULL AND kind IN ('due','eve_before')
-           AND item_id IS NOT NULL AND (lease_until IS NULL OR lease_until <= ?2)`,
+         WHERE user_id = ?1 AND status = 'pending' AND parent_id IS NULL AND kind IN ('due','eve_before') AND item_id IS NOT NULL`,
       )
-      .bind(userId, now)
+      .bind(userId)
       .all<PendingRoot>();
 
     const tzChanged = change.field === "tz";
@@ -142,7 +141,8 @@ export async function applySetting(userId: number, db: Db, change: SettingChange
       const ids = JSON.stringify(transfers.map((t) => t.oldId));
       const tuples = JSON.stringify(transfers.map((t) => [t.itemId, t.kind, t.fireAt, t.maxAttempts, t.oldId]));
       stmts.push(
-        // старі корені планувальника → cancelled (лише ті, що досі `pending` без оренди: гонка з відправкою)
+        // старі корені планувальника → cancelled — лише `pending` без активної оренди (її бере відправка; тоді новий корінь
+        // нижче не вставиться, бо старий не `cancelled`, а `planned_at` не скинеться)
         d1
           .prepare(
             `UPDATE reminders SET status = 'cancelled', lease_until = NULL
