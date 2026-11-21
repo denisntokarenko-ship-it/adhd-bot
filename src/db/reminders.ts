@@ -1,6 +1,6 @@
 // Черга нагадувань (docs/spec/phase-2.md, S2.1). Кожна функція — з `userId` першим (НФ-3); cron-вибірки без
 // власника (`claimDueReminders`, `listUnplannedItems`) живуть у `system.ts` — закритий список винятків.
-import { HOUR_MS, type PlannedRow, type RootKind } from "../reminders/plan";
+import { HOUR_MS, MAX_ATTEMPTS_ESCALATING, leaveAfterAnswer, type PlannedRow, type RootKind } from "../reminders/plan";
 import { d1Of, type Db } from "./index";
 import { getById as getItem, type Item } from "./items";
 import { doneStatement } from "./points";
@@ -331,4 +331,54 @@ export async function parentSentAs(userId: number, db: Db, parentIds: number[]):
     .bind(userId, JSON.stringify(parentIds))
     .all<{ id: number; sent_as: "single" | "summary" | null }>();
   return new Map(res.results.map((r) => [r.id, r.sent_as]));
+}
+
+// ── Крок 2.3: дорога до події (S2.7) ─────────────────────────────────────────────────────────────────────
+
+// Питання «скільки добиратись?» — раз на подію (S2.7.a): захоплення `travel_asked_at IS NULL` в самому операторі, тож
+// повтор доставки чи другий шлях квитанції (повтор розбору) другого питання не дає. true — питання задаєш ти.
+export async function claimTravelAsk(userId: number, db: Db, itemId: number, now: number): Promise<boolean> {
+  const res = await d1Of(db)
+    .prepare(
+      "UPDATE items SET travel_asked_at = ?3 WHERE id = ?2 AND user_id = ?1 AND status = 'open' AND kind = 'event' AND travel_asked_at IS NULL",
+    )
+    .bind(userId, itemId, now)
+    .run();
+  return (res.meta.changes ?? 0) === 1;
+}
+
+export type TravelOutcome =
+  | { kind: "set"; fireAt: number; changed: boolean } // fireAt: коли піде «час виходити»; changed=false — те саме N, без змін
+  | { kind: "gone" } // немає такого запису / не подія з часом / закритий
+  | { kind: "started" }; // подія вже почалась: нічого не змінено
+
+// Відповідь `tr:<item>:<хв>` (S2.7.b, S2.7.g): `travel_min = N`, `pending` ланцюги `leave_now` скасовано, новий корінь
+// о `due − N − 15 хв` (мить уже позаду, а подія ще попереду → зараз). `NULL` і `0` — те саме N: повтор того самого N
+// при наявному не скасованому корені `leave_now` — без змін. Скасування й вставка — один batch (D1 виконує його
+// атомарно): рівно один `pending` `leave_now`, хоч би скільки разів тапнули. Скасований корінь не блокує вставку
+// (`ux_rem_root` частковий за `status <> 'cancelled'`), тож 30 → 60 → 30 лишає один `pending`.
+export async function setTravel(userId: number, db: Db, itemId: number, minutes: number, now: number): Promise<TravelOutcome> {
+  const item = await getItem(userId, db, itemId);
+  if (item === null || item.kind !== "event" || item.status !== "open" || item.due_at === null || item.all_day === 1) return { kind: "gone" };
+  const fireAt = leaveAfterAnswer(item.due_at, minutes, now);
+  if (fireAt === null) return { kind: "started" };
+  const same = (item.travel_min ?? 0) === minutes;
+  if (same) {
+    const have = await d1Of(db)
+      .prepare("SELECT 1 AS x FROM reminders WHERE user_id = ?1 AND item_id = ?2 AND kind = 'leave_now' AND parent_id IS NULL AND status <> 'cancelled' LIMIT 1")
+      .bind(userId, itemId)
+      .first<{ x: number }>();
+    if (have !== null) return { kind: "set", fireAt, changed: false };
+  }
+  const d1 = d1Of(db);
+  await d1.batch([
+    d1.prepare("UPDATE items SET travel_min = ?3 WHERE id = ?2 AND user_id = ?1 AND status = 'open'").bind(userId, itemId, minutes),
+    d1
+      .prepare(
+        "UPDATE reminders SET status = 'cancelled', lease_until = NULL WHERE user_id = ?1 AND item_id = ?2 AND status = 'pending' AND kind IN ('leave_now', 'repeat')",
+      )
+      .bind(userId, itemId),
+    rootInsert(userId, db, itemId, { kind: "leave_now", fireAt, maxAttempts: MAX_ATTEMPTS_ESCALATING }, now, false),
+  ]);
+  return { kind: "set", fireAt, changed: true };
 }

@@ -1,0 +1,66 @@
+test = "npx vitest run --project workers --reporter=dot test/worker/travel.test.ts test/worker/capture.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/reminders/plan.ts"
+old = '''((travelMin ?? 0) + LEAVE_BUFFER_MIN) * MIN;'''
+new = '''((travelMin ?? 0) + 0) * MIN;'''
+why = "прибрати «−15 хв»: leave_now = due − travel замість due − travel − 15 -> червоніє тест 2.7.d (09:15 → 09:30) і 2.7.e (08:45)"
+match = "2026-11-21T07:15|2026-11-21T06:45"
+
+[[mutant]]
+id = "M2"
+file = "src/db/reminders.ts"
+old = '''AND status = 'pending' AND kind IN ('leave_now', 'repeat')",'''
+new = '''AND status = 'never' AND kind IN ('leave_now', 'repeat')",'''
+why = "перепланування без скасування старого leave_now: після 30 → 60 лишаються ДВА pending (09:15 і 08:45) -> червоніє тест 30 → 60 (S2.7.b/g)"
+match = "S2\\.7\\.b/g"
+
+[[mutant]]
+id = "M3"
+file = "src/reminders/plan.ts"
+old = '''item.due_at !== null && now >= item.due_at;'''
+new = '''item.due_at !== null && now >= item.due_at + 3_600_000;'''
+why = "leave_now, затриманий за початок події, усе ще йде (поріг +1 год) -> червоніє тест боргу 2.2 (item 31: подія 08:00, відправка 08:01)"
+match = "борг 2\\.2"
+
+[[mutant]]
+id = "M4"
+file = "src/db/reminders.ts"
+old = '''AND status = 'open' AND kind = 'event' AND travel_asked_at IS NULL",'''
+new = '''AND status = 'open' AND kind = 'event'",'''
+why = "питання про дорогу без «раз на подію» (захоплення без travel_asked_at IS NULL): дубль доставки й паралельний claim дають друге питання -> червоніє 2.7.a і claimTravelAsk"
+match = "2\\.7\\.a|1\\.4\\.b|питання задається раз"
+
+[[mutant]]
+id = "M5"
+file = "src/reminders/plan.ts"
+old = '''return Math.max(leaveAt(dueAt, travelMin), now);'''
+new = '''return leaveAt(dueAt, travelMin);'''
+why = "відповідь про дорогу без «зараз» для миті позаду: leave_now ставиться в минуле, а не на now -> червоніє тест 09:52 / «мить виходити вже позаду»"
+match = "2026-11-21T07:52|мить «виходити»|09:52"
+
+[[mutant]]
+id = "M6"
+file = "src/db/reminders.ts"
+old = '''  if (same) {'''
+new = '''  if (false && same) {'''
+why = "повторна відповідь з тим самим N перепланує без потреби (скасує й створить корінь заново) -> червоніє S2.7.g A (рівно той самий рядок, без змін)"
+match = "S2\\.7\\.g"
+
+[[mutant]]
+id = "M7"
+file = "src/reminders/buttons.ts"
+old = '''const TR_RE = /^tr:(\d{1,15}):(0|15|30|60)$/;'''
+new = '''const TR_RE = /^tr:(\d{1,15}):(\d{1,3})$/;'''
+why = "кнопка tr: приймає будь-які хвилини, а не лише 0/15/30/60 -> червоніє «невалідні хвилини не маршрутизуються»"
+match = "невалідні хвилини"
+
+[[mutant]]
+id = "M8"
+file = "src/reminders/plan.ts"
+old = '''if (r.kind !== "leave_now" && r.kind !== "repeat") return false;'''
+new = '''if (r.kind !== "leave_now") return false;'''
+why = "повтор leave_now після початку події не гаситься (лише корінь) -> червоніє тест повтору"
+match = "повтор \\(repeat\\)"

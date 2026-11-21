@@ -55,7 +55,7 @@ export async function getDelivery(userId: number, db: Db): Promise<Delivery | nu
   return d1Of(db).prepare("SELECT tg_id, tz, morning_at FROM users WHERE id = ?1").bind(userId).first<Delivery>();
 }
 
-export type AckKind = "ok" | "later" | "rel";
+export type AckKind = "ok" | "later" | "rel" | "travel";
 
 // Пам'ять варіанта підтверджень — колонка на пул (НФ-4, S2.10.b): інакше ✅ → ⏰ → ✅ повторив би текст.
 export async function getAckIdx(userId: number, kind: AckKind, db: Db): Promise<number | null> {
@@ -63,6 +63,7 @@ export async function getAckIdx(userId: number, kind: AckKind, db: Db): Promise<
     ok: "SELECT ack_ok_idx AS idx FROM users WHERE id = ?1",
     later: "SELECT ack_later_idx AS idx FROM users WHERE id = ?1",
     rel: "SELECT ack_rel_idx AS idx FROM users WHERE id = ?1",
+    travel: "SELECT ack_travel_idx AS idx FROM users WHERE id = ?1",
   }[kind];
   const row = await d1Of(db).prepare(sql).bind(userId).first<{ idx: number | null }>();
   return row?.idx ?? null;
@@ -73,6 +74,7 @@ export async function setAckIdx(userId: number, kind: AckKind, idx: number, db: 
     ok: "UPDATE users SET ack_ok_idx = ?2 WHERE id = ?1",
     later: "UPDATE users SET ack_later_idx = ?2 WHERE id = ?1",
     rel: "UPDATE users SET ack_rel_idx = ?2 WHERE id = ?1",
+    travel: "UPDATE users SET ack_travel_idx = ?2 WHERE id = ?1",
   }[kind];
   await d1Of(db).prepare(sql).bind(userId, idx).run();
 }

@@ -20,6 +20,7 @@ export const PLAN_LIMIT = 50; // записів за тик планувальн
 export const EVE_AT_MIN = 20 * 60; // «навечір» — 20:00 попереднього дня
 export const EVE_MIN_LEAD_MS = 5 * MIN; // eve_before лише якщо ще попереду більш ніж на 5 хв
 export const LEAVE_BUFFER_MIN = 15; // leave_now = due − travel − 15 хв
+export const TRAVEL_CHOICES = [0, 15, 30, 60] as const; // кнопки питання «скільки добиратись?» (S2.7.a), хв
 
 export type RootKind = "due" | "eve_before" | "leave_now";
 
@@ -76,12 +77,21 @@ export function plannedFor(item: PlanItem, now: number, user: PlanUser): Planned
   } else if (item.kind === "event") {
     const eve = wallToUtc(shiftDate(localDate(due, user.tz), -1), EVE_AT_MIN, user.tz);
     if (eve > now + EVE_MIN_LEAD_MS) rows.push({ kind: "eve_before", fireAt: eve, maxAttempts: 1 });
-    const leave = due - ((item.travel_min ?? 0) + LEAVE_BUFFER_MIN) * MIN;
-    rows.push({ kind: "leave_now", fireAt: leave, maxAttempts: MAX_ATTEMPTS_ESCALATING });
+    rows.push({ kind: "leave_now", fireAt: leaveAt(due, item.travel_min), maxAttempts: MAX_ATTEMPTS_ESCALATING });
   } else {
     rows.push({ kind: "due", fireAt: due, maxAttempts: byPriority });
   }
   return rows.filter((r) => r.fireAt >= now - LATE_MS);
+}
+
+// Момент «час виходити» (S2.7.b/e): `due − (дорога + 15 хв)`. Єдине місце цієї формули — планувальник і відповідь `tr`.
+export const leaveAt = (dueAt: number, travelMin: number | null): number => dueAt - ((travelMin ?? 0) + LEAVE_BUFFER_MIN) * MIN;
+
+// Куди ставити `leave_now` після відповіді про дорогу (S2.7.b): мить уже позаду, а подія ще попереду → зараз
+// (людина щойно сказала, що дорога дальша, і ще встигає); подія вже почалась → null (нічого не створюється).
+export function leaveAfterAnswer(dueAt: number, travelMin: number, now: number): number | null {
+  if (dueAt <= now) return null;
+  return Math.max(leaveAt(dueAt, travelMin), now);
 }
 
 export interface RepeatSource {
@@ -100,6 +110,14 @@ export function nextRepeat(row: RepeatSource, eventDueAt: number | null = null):
     return { attempt: row.attempt + 1, fireAt };
   }
   return null;
+}
+
+// «Час виходити» (leave_now) чи його повтор для події з часом, якщо подія вже почалась: докір, не допомога
+// (S2.2.e). Перевіряється ПЕРЕД відправкою, бо тиша, анти-шум чи збій Telegram могли затримати рядок за `due_at`
+// (живий прогін 2.2: повтор item 31 пішов о 08:01 при події 08:00). `repeat` події з часом — завжди ланцюг leave_now.
+export function leaveMoot(r: { kind: string }, item: { kind: string; all_day: number; due_at: number | null }, now: number): boolean {
+  if (r.kind !== "leave_now" && r.kind !== "repeat") return false;
+  return item.kind === "event" && item.all_day === 0 && item.due_at !== null && now >= item.due_at;
 }
 
 export interface QuietUser {

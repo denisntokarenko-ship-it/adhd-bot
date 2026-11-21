@@ -18,6 +18,7 @@ import {
   LIMIT_POOL,
   RECEIPT_POOL,
   SOON_POOL,
+  TRAVEL_ASK_POOL,
 } from "../../src/texts";
 import { baseEnv, deps, mockTelegram, post, send, textUpdate } from "./helpers";
 
@@ -109,7 +110,7 @@ describe("S1.4 квитанція", () => {
     });
     expect(items[1]).toMatchObject({ kind: "task", title: "Корм коту", due_at: null });
 
-    expect(tg.sent()).toHaveLength(1); // квитанція — ОДНЕ повідомлення
+    expect(tg.sent()).toHaveLength(2); // квитанція — ОДНЕ повідомлення + питання про дорогу для події (2.3)
     const msg = tg.sent()[0]!;
     const lines = textOf(msg).split("\n");
     expect(RECEIPT_POOL).toContain(lines[0]);
@@ -132,7 +133,7 @@ describe("S1.4 квитанція", () => {
     expect(await count("items")).toBe(2);
     expect(await count("ai_calls")).toBe(1);
     expect(ai.requests).toHaveLength(1);
-    expect(tg.sent()).toHaveLength(1);
+    expect(tg.sent()).toHaveLength(2); // одна квитанція + одне питання про дорогу: дубль доставки другого не дає (2.3)
   });
 
   it("1.4.c: захоплення вже в БД як pending з орендою, коли ШІ ще працює", async () => {
@@ -380,7 +381,7 @@ describe("S1.6 «Не так»", () => {
     expect(prompt).toMatch(/<correction>\nні, це стоматолог\n<\/correction>/);
 
     // нова квитанція; у старої зняті кнопки
-    expect(tg.calls.map((c) => c.method)).toEqual(["editMessageReplyMarkup", "sendMessage"]);
+    expect(tg.calls.map((c) => c.method)).toEqual(["editMessageReplyMarkup", "sendMessage", "sendMessage"]); // + питання про дорогу (2.3)
     expect(tg.calls[0]!.body.reply_markup).toEqual({ inline_keyboard: [] });
     expect(textOf(tg.sent()[0]!)).toContain("📅 Стоматолог — завтра, сб 21.11, 10:00");
   });
@@ -490,5 +491,47 @@ describe("межі", () => {
   it("webhook.post лишається доступним (імпорт не зайвий)", () => {
     expect(post({}, null)).toBeInstanceOf(Request);
     expect(handleRequest).toBeTypeOf("function");
+  });
+});
+
+describe("S2.7.a питання про дорогу після квитанції (крок 2.3)", () => {
+  const kbOf = (c: { body: Record<string, unknown> }) => (c.body.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard;
+
+  it("2.7.a: подія з часом → слідом окреме питання з днем, часом і назвою; кнопки 0/15/30/60 хв; раз на подію", async () => {
+    const tg = mockTelegram();
+    const ai = replyWith(DOCTOR);
+    const upd = textUpdate("завтра о 10 лікар");
+    await send(upd, baseEnv(), d(ai.client));
+    await send(upd, baseEnv(), d(ai.client)); // дубль доставки — другого питання немає
+    const [receipt, ask] = tg.sent();
+    expect(tg.sent()).toHaveLength(2);
+    expect(textOf(receipt!)).toContain("📅 Лікар");
+    const [head, ...rest] = textOf(ask!).split("\n");
+    expect(TRAVEL_ASK_POOL).toContain(head);
+    expect(rest).toEqual(["<b>Лікар</b> — завтра, сб 21.11, 10:00"]);
+    const item = (await rows<{ id: number; travel_asked_at: number | null }>("SELECT id, travel_asked_at FROM items"))[0]!;
+    expect(item.travel_asked_at).not.toBeNull();
+    expect(kbOf(ask!)).toEqual([[0, 15, 30, 60].map((m) => ({ text: `${m} хв`, callback_data: `tr:${item.id}:${m}` }))]);
+    expect(TRAVEL_ASK_POOL.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("2.7.a: задача, нотатка, подія на весь день і подія без дати — питання немає", async () => {
+    const tg = mockTelegram();
+    const ai = replyWith(FOOD, raw({ kind: "note", title: "Ідея" }), raw({ kind: "event", title: "Конференція", due_local: "2026-11-21", all_day: true }));
+    await send(textUpdate("корм, ідея, конференція"), baseEnv(), d(ai.client));
+    expect(tg.sent()).toHaveLength(1);
+    expect(await count("items")).toBe(3);
+  });
+
+  it("2.7.a: «Не так» → нова подія (інший запис) → нове питання про її дорогу, старе не повторюється", async () => {
+    const tg = mockTelegram();
+    const ai = replyWith(DOCTOR);
+    await send(textUpdate("завтра о 10 лікар"), baseEnv(), d(ai.client));
+    const cap = (await rows<{ id: number }>("SELECT id FROM captures"))[0]!.id;
+    await send(callback(`fix:${cap}`), baseEnv(), d(ai.client));
+    const ai2 = replyWith(raw({ kind: "event", title: "Стоматолог", due_local: "2026-11-21T10:00" }));
+    await send(textUpdate("ні, це стоматолог"), baseEnv(), d(ai2.client));
+    const asks = tg.sent().filter((c) => textOf(c).includes("<b>") && textOf(c).includes("— завтра"));
+    expect(asks.map((c) => textOf(c).split("\n")[1])).toEqual(["<b>Лікар</b> — завтра, сб 21.11, 10:00", "<b>Стоматолог</b> — завтра, сб 21.11, 10:00"]);
   });
 });

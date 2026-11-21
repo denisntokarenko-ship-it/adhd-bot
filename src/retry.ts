@@ -21,6 +21,7 @@ import { claimDuePendingCaptures } from "./db/system";
 import { getById as getUser } from "./db/users";
 import type { AppEnv } from "./env";
 import { buildReceipt } from "./format";
+import { askTravel } from "./reminders/travel";
 import { RETRIED_POOL } from "./texts";
 import { dayBounds } from "./time";
 
@@ -75,6 +76,10 @@ async function retryOne(api: Api, d: CaptureDeps, claimed: Capture): Promise<voi
       reply_markup: { inline_keyboard: [r.buttons.map((b) => ({ text: b.text, callback_data: b.data }))] },
     });
     await setReceipt(userId, d.db, cap.id, sent.message_id);
+    // Питання про дорогу — слідом за квитанцією, а не за часом події (S2.7.a); не кидає.
+    await askTravel({ db: d.db, userId, tz: d.user.tz, now, rand: d.rand }, cap.id, (text, keyboard) =>
+      api.sendMessage(d.user.tg_id, text, { parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } }),
+    );
   } catch {
     console.error("retry: receipt not sent");
   }

@@ -170,6 +170,16 @@ export const ALREADY_DONE_POOL: readonly string[] = ["це вже зроблен
 export const ALREADY_RELEASED = "вже відпущено";
 export const ALREADY_SNOOZED = "вже відклав";
 export const UNKNOWN_REMINDER = "не знаю такого";
+// Дорога до події (крок 2.3, S2.7): питання після квитанції, підтвердження, тости. Без провини: «не відповів» ні на що не впливає.
+export const TRAVEL_ASK_POOL: readonly string[] = [
+  "А скільки тобі добиратись? 🚶",
+  "Скільки часу піде на дорогу? Тоді нагадаю вчасно 🚶",
+  "Підкажи, скільки добиратись — нагадаю, коли час виходити 🚶",
+];
+export const ACK_TRAVEL_POOL: readonly string[] = ["Записав, нагадаю вчасно", "Гаразд, нагадаю, коли виходити", "Зрозумів, спіймаю потрібну хвилину"];
+export const TRAVEL_NONE = "без дороги"; // «🚶 <b>назва</b> — без дороги. Нагадаю о …»
+export const TRAVEL_STARTED = "подія вже почалась";
+export const BTN_TRAVEL_SUFFIX = "хв";
 export const EVE_ACK_TAIL = "ок"; // «👍 <b>назва</b> — ок»
 export const DONE_TAIL = "зроблено"; // «✅ <b>назва</b> — зроблено»
 export const BTN_DONE = "✅";
