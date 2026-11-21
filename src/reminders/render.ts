@@ -112,6 +112,11 @@ export function summaryMessage(head: string, lines: SummaryLine[], offset: numbe
 export function travelMessage(head: string, title: string, dueAt: number, tz: string, now: number, itemId: number): { text: string; keyboard: Keyboard } {
   return {
     text: `${head}\n<b>${clipTitle(title)}</b> — ${formatDue(dueAt, false, tz, now)}`,
-    keyboard: [TRAVEL_CHOICES.map((m) => ({ text: `${m} ${BTN_TRAVEL_SUFFIX}`, callback_data: `tr:${itemId}:${m}` }))],
+    keyboard: travelKeyboard(itemId),
   };
 }
+
+// Кнопки лишаються й після відповіді: інший N перепланує `leave_now` без дублів (S2.7.b), тож змінити можна з того ж повідомлення.
+export const travelKeyboard = (itemId: number): Keyboard => [
+  TRAVEL_CHOICES.map((m) => ({ text: `${m} ${BTN_TRAVEL_SUFFIX}`, callback_data: `tr:${itemId}:${m}` })),
+];

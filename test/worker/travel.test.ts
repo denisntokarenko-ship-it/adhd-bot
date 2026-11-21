@@ -210,6 +210,7 @@ describe("кнопки tr:", () => {
     expect(String(edit.body.text)).toContain("<b>Лікар</b> — 30 хв");
     expect(String(edit.body.text)).toContain("09:15");
     expect(ACK_TRAVEL_POOL.some((p) => String(edit.body.text).includes(p))).toBe(true);
+    expect(JSON.stringify(edit.body.reply_markup)).toContain(`tr:${ev}:60`); // кнопки лишились: відповідь можна змінити
     await press(`tr:${ev}:30`);
     expect(await pendingLeave(u, ev)).toHaveLength(1);
     await press(`tr:${ev}:60`);

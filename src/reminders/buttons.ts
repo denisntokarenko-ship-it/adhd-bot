@@ -34,7 +34,7 @@ import {
   pickVariant,
 } from "../texts";
 import { MAX_ATTEMPTS_ESCALATING, snoozeAt, type RootKind, type SnoozeAction } from "./plan";
-import { clipTitle, mainKeyboard, snoozeKeyboard, summaryMessage, type SummaryLine } from "./render";
+import { clipTitle, mainKeyboard, snoozeKeyboard, summaryMessage, travelKeyboard, type SummaryLine } from "./render";
 
 export interface ButtonDeps {
   db: Db;
@@ -121,7 +121,7 @@ async function handleTr(ctx: Context, d: ButtonDeps, itemId: number, minutes: nu
   if (out.kind === "started") return TRAVEL_STARTED;
   const head = await pickAck(d, "travel", ACK_TRAVEL_POOL);
   const road = minutes === 0 ? TRAVEL_NONE : `${minutes} хв`;
-  await edit(ctx, `🚶 <b>${clipTitle(item.title)}</b> — ${road}. ${head}: ${formatDue(out.fireAt, false, dl.tz, now)}`);
+  await edit(ctx, `🚶 <b>${clipTitle(item.title)}</b> — ${road}. ${head}: ${formatDue(out.fireAt, false, dl.tz, now)}`, travelKeyboard(itemId));
   return undefined;
 }
 
