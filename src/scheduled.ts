@@ -2,6 +2,7 @@ import type { Clock } from "./clock";
 import { openDb } from "./db/index";
 import { heartbeat, markPingOk } from "./db/system";
 import type { AppEnv } from "./env";
+import { planDigests } from "./digests/planner";
 import { dispatchReminders } from "./reminders/dispatch";
 import { planReminders } from "./reminders/planner";
 import { processPending, type RetryDeps } from "./retry";
@@ -61,6 +62,12 @@ async function processQueue(env: AppEnv, clock: Clock, deps: RetryDeps): Promise
     await planReminders(openDb(env), clock.now());
   } catch (err) {
     console.error("cron: reminders failed", err instanceof Error ? err.name : "unknown");
+  }
+  // Огляди (S3.1): доплановування відсутнього `pending` — кожен тик, після планувальника записів і до відправки.
+  try {
+    await planDigests(openDb(env), clock.now());
+  } catch (err) {
+    console.error("cron: digests planning failed", err instanceof Error ? err.name : "unknown");
   }
   // Відправка: STALE → тиша → оренда → добір → відправка → закриття (S2.3). Свій try/catch: збій відправки не гасить підбір.
   try {

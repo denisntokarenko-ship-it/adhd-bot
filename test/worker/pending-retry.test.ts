@@ -15,7 +15,7 @@ const FRI = Date.parse("2026-11-20T13:00:00Z"); // 15:00 п'ятниці за К
 const MIN = 60_000;
 
 beforeEach(async () => {
-  for (const t of ["points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users", "heartbeat"]) await DB.prepare(`DELETE FROM ${t}`).run();
+  for (const t of ["reminders", "points_ledger", "ai_calls", "items", "capture_fixes", "captures", "users", "heartbeat"]) await DB.prepare(`DELETE FROM ${t}`).run();
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());

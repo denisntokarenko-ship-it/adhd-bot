@@ -30,6 +30,7 @@ export interface TgCall {
 export interface SendError {
   code: number; // HTTP/Telegram-код відповіді на sendMessage: 429, 403, 500…
   retryAfter?: number;
+  description?: string; // текст помилки Telegram (клас помилки в лозі оглядів, 3.1.h); за замовчуванням `mock <code>`
   // яким за рахунком викликам sendMessage (1-based) віддавати помилку; за замовчуванням — усім
   only?: number[];
 }
@@ -86,7 +87,7 @@ export function mockTelegram(opts: { failSend?: boolean; failDownload?: boolean;
       const e = opts.sendError;
       if (e !== undefined && (e.only === undefined || e.only.includes(sends))) {
         return new Response(
-          JSON.stringify({ ok: false, error_code: e.code, description: `mock ${e.code}`, ...(e.retryAfter === undefined ? {} : { parameters: { retry_after: e.retryAfter } }) }),
+          JSON.stringify({ ok: false, error_code: e.code, description: e.description ?? `mock ${e.code}`, ...(e.retryAfter === undefined ? {} : { parameters: { retry_after: e.retryAfter } }) }),
           { status: e.code, headers: { "content-type": "application/json" } },
         );
       }

@@ -34,7 +34,7 @@ describe("S0.4 огорожа шару даних", () => {
   it("0.4.d (R5): system.ts — закритий список імен, а не виняток для цілого файлу", () => {
     const sys = files.find((f) => f.path === "src/db/system.ts")!;
     expect(userIdViolations([sys])).toEqual([]); // реальний файл чистий
-    expect(exportedFunctions(sys.text).map((f) => f.name).sort()).toEqual(["cancelStaleReminders", "claimDuePendingCaptures", "claimDueReminders", "countDueReminders", "countPending", "heartbeat", "listQuietUserIds", "listUnplannedItems", "markPingOk", "readHeartbeat", "releaseLeases"]);
+    expect(exportedFunctions(sys.text).map((f) => f.name).sort()).toEqual(["cancelStaleReminders", "claimDuePendingCaptures", "claimDueReminders", "countDueReminders", "countPending", "heartbeat", "listQuietUserIds", "listUnplannedItems", "listUsersMissingDigests", "markPingOk", "readHeartbeat", "releaseLeases"]);
     // новий експорт без userId і поза списком — червоний, навіть у «системному» файлі
     const leak = file("src/db/system.ts", [sys.text, "export async function allUserTgIds(db: Db) {}"].join("\n"));
     expect(userIdViolations([leak])).toEqual(["src/db/system.ts: allUserTgIds(db)"]);

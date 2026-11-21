@@ -17,6 +17,11 @@ const AT_LEAST_5 = [
   "ACK_REL_POOL",
   "ACK_PAUSE_POOL",
   "ACK_RESUME_POOL",
+  "DIGEST_MORNING_POOL",
+  "DIGEST_WARM_POOL",
+  "DIGEST_EVENING_POOL",
+  "DIGEST_WEEKLY_POOL",
+  "WK_TODAY_POOL",
 ] as const;
 
 describe("S2.10.a пули ≥ 5 варіантів, без дублів", () => {
