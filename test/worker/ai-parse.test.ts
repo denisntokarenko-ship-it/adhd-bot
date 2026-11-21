@@ -478,3 +478,32 @@ describe("S2.8 «сьогодні ввечері», «завтра зранку�
     expect(only(await parseCapture(ctx, "т"))[0]).toMatchObject({ dueAt: null, clarify: "unclear" });
   });
 });
+
+// S2.8.e (рев'ю R-2, Б3): час без дня, «сьогоднішній» день тижня, «важливо» будь-де у фразі. Правила — у промпті,
+// контракт не змінюється; мок Haiku відповідає за правилом, код лише рахує `due_local → due_at` і ставить питання.
+describe("S2.8.e час без дня, день тижня = сьогодні, «важливо» будь-де", () => {
+  const NOW_15 = Date.parse("2026-11-20T13:00:00Z"); // 15:00 пт 20.11 за Києвом
+  const promptOf = () => buildPrompt({ text: "т", source: "text", nowLocal: "2026-11-20T15:00", tz: KYIV, weekday: "п'ятниця" }).system;
+  const runWith = async (over: Record<string, unknown>) => {
+    const m = mock(() => reply(raw({ kind: "task", title: "т", ...over })));
+    const { ctx } = await setup({ client: m.client, now: NOW_15 });
+    return only(await parseCapture(ctx, "т"))[0]!;
+  };
+
+  it("2.8.e: промпт містить три правила (час без дня, день тижня = сьогодні, «важливо» незалежно від місця)", () => {
+    const p = promptOf();
+    expect(p).toMatch(/Час без дня[^\n]*найближча майбутня мить[^\n]*сьогодні, якщо[^\n]*ще попереду[^\n]*інакше завтра/);
+    expect(p).toMatch(/День тижня, що збігається з weekday[^\n]*ще попереду[^\n]*сьогодні[^\n]*вже минув — due_local=null, date_unclear=true/);
+    expect(p).toMatch(/Сигнал діє незалежно від місця у фразі[^\n]*«через 2 хв важливо подзвонити мамі»/);
+  });
+  it("2.8.e (1): «дейлі на 9 ранку» о 15:00 → завтра 09:00 (07:00Z), без питання", async () => {
+    expect(await runWith({ due_local: "2026-11-21T09:00" })).toMatchObject({ dueAt: Date.parse("2026-11-21T07:00:00Z"), allDay: false, clarify: null });
+  });
+  it("2.8.e (2): «у п'ятницю о 16:00» у п'ятницю о 15:00 → сьогодні 16:00; «у п'ятницю о 14:30» → питання, а не тиша", async () => {
+    expect(await runWith({ due_local: "2026-11-20T16:00" })).toMatchObject({ dueAt: Date.parse("2026-11-20T14:00:00Z"), clarify: null });
+    expect(await runWith({ due_local: null, date_unclear: true })).toMatchObject({ dueAt: null, clarify: "unclear" });
+  });
+  it("2.8.e (3): «через 2 хв важливо подзвонити мамі» → important", async () => {
+    expect(await runWith({ due_local: "2026-11-20T15:02", priority: "important" })).toMatchObject({ priority: "important", clarify: null });
+  });
+});
