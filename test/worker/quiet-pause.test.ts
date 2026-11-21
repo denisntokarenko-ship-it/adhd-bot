@@ -249,7 +249,7 @@ describe("S2.11 /quiet", () => {
     expect(lastEdit(tg)!.body.text).toBe(QUIET_NONE);
     expect(await usr()).toMatchObject({ quiet_from: 480, quiet_to: 480 });
     for (const bad of ["qt:f:999", "qt:t:1380:600", "qt:t:60:480", "qt:x", "pz:5"]) await press(bad);
-    expect(await usr()).toMatchObject({ quiet_from: 480, quiet_to: 480 });
+    expect(await usr()).toMatchObject({ quiet_from: 480, quiet_to: 480, pause_until: null });
     at$(at("2026-11-20T23:00:00Z")); // 01:00 Київ
     await rem(u, await mkItem(u), { fire_at: Date.now() - 1000 });
     tg.calls.length = 0;

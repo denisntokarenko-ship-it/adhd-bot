@@ -1,0 +1,149 @@
+test = "npx vitest run --reporter=dot test/worker/quiet-pause.test.ts test/node/reminders-plan.test.ts test/node/variants.test.ts test/worker/ai-parse.test.ts test/worker/voice-forward.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/quiet.ts"
+old = '''n < 1 || n > PAUSE_MAX_H'''
+new = '''n < 1 || n > 240'''
+why = "поріг /pause N: 24 → 240 (25 год приймається)"
+match = "N поза 1–24"
+
+[[mutant]]
+id = "M2"
+file = "src/quiet.ts"
+old = '''q.pause_until <= d.clock.now()'''
+new = '''q.pause_until < 0'''
+why = "/resume з простроченою паузою не каже «паузи й не було»"
+match = "без активної паузи"
+
+[[mutant]]
+id = "M3"
+file = "src/quiet.ts"
+old = '''await setPause(d.user.id, null, d.db);'''
+new = '''await setPause(d.user.id, q.pause_until, d.db);'''
+why = "/resume не знімає паузу"
+match = "активна пауза|/resume раніше"
+
+[[mutant]]
+id = "M4"
+file = "src/quiet.ts"
+old = '''const effective = q === null ? until : shiftForQuiet(until, { ...q, pause_until: null });'''
+new = '''const effective = until;'''
+why = "відповідь /pause називає pause_until, а не реальний кінець (довша з пауза/тиша)"
+match = "діє довша"
+
+[[mutant]]
+id = "M5"
+file = "src/db/users.ts"
+old = '''pause: "UPDATE users SET ack_pause_idx = ?2 WHERE id = ?1",'''
+new = '''pause: "UPDATE users SET ack_resume_idx = ?2 WHERE id = ?1",'''
+why = "пам'ять варіанта відповіді /pause не зберігається: дві паузи підряд — той самий текст"
+match = "дві паузи підряд"
+
+[[mutant]]
+id = "M6"
+file = "src/quiet.ts"
+old = '''/^pz:(60|120|240|m)$/'''
+new = '''/^pz:(\d+|m)$/'''
+why = "pz: приймає довільне число хвилин (зіпсований callback ставить паузу)"
+match = "зіпсовані callback"
+
+[[mutant]]
+id = "M7"
+file = "src/quiet.ts"
+old = '''t:(1320|1380|0):(420|480|540)'''
+new = '''t:(1320|1380|0):(\d+)'''
+why = "qt:t: приймає довільний кінець тиші"
+match = "зіпсовані callback"
+
+[[mutant]]
+id = "M8"
+file = "src/quiet.ts"
+old = '''await setQuiet(d.user.id, q?.quiet_to ?? 480, q?.quiet_to ?? 480, d.db);'''
+new = '''await setQuiet(d.user.id, q?.quiet_from ?? 1380, q?.quiet_to ?? 480, d.db);'''
+why = "«без тихих годин» не вирівнює quiet_from = quiet_to"
+match = "без тихих годин"
+
+[[mutant]]
+id = "M9"
+file = "src/reminders/plan.ts"
+old = '''return today > now ? today :'''
+new = '''return today >= now ? today :'''
+why = "«до ранку» о 08:00:00 рівно — сьогодні (мить, що вже настала), а не завтра"
+match = "nextLocalMinute"
+
+[[mutant]]
+id = "M10"
+file = "src/db/reminders.ts"
+old = '''AND sent_as = 'summary' AND variant_idx IS NOT NULL ORDER BY'''
+new = '''AND sent_as = 'single' AND variant_idx IS NOT NULL ORDER BY'''
+why = "пам'ять заголовка зведення читає не ті рядки: два зведення підряд мають однаковий заголовок"
+match = "два зведення підряд"
+
+[[mutant]]
+id = "M11"
+file = "src/reminders/dispatch.ts"
+old = '''pickVariant(SUMMARY_HEAD_POOL.length, await lastSummaryHeadIdx(userId, db), c.rand)'''
+new = '''pickVariant(SUMMARY_HEAD_POOL.length, null, c.rand)'''
+why = "заголовок зведення без пам'яті (як було до 2.4)"
+match = "два зведення підряд"
+
+[[mutant]]
+id = "M12"
+file = "src/reminders/dispatch.ts"
+old = '''r.kind === "eve_before" || r.kind === "leave_now" || (r.kind === "repeat"'''
+new = '''r.kind === "eve_before" || (r.kind === "repeat"'''
+why = "«час виходити» без часу події (S2.7.f)"
+match = "називають час події"
+
+[[mutant]]
+id = "M13"
+file = "src/reminders/dispatch.ts"
+old = '''await lastVariantIdx(userId, db, choice.kinds, choice.attempt)'''
+new = '''null'''
+why = "нагадування без пам'яті варіанта: два поспіль — той самий текст"
+match = "два нагадування поспіль"
+
+[[mutant]]
+id = "M14"
+file = "src/db/system.ts"
+old = '''(u.pause_until !== null && u.pause_until > now) ||'''
+new = '''false ||'''
+why = "пауза не робить користувача «тихим»: нагадування йдуть під час паузи"
+match = "пауза 2 год"
+
+[[mutant]]
+id = "M15"
+file = "src/ai/prompt.ts"
+old = '''ввечері, увечері → 19:00'''
+new = '''ввечері, увечері → 18:00'''
+why = "S2.8: вечір — 18:00 замість 19:00"
+match = "ввечері, увечері → 19:00"
+
+[[mutant]]
+id = "M16"
+file = "src/ai/prompt.ts"
+old = '''вдень, у обід → 13:00'''
+new = '''вдень, у обід → 12:00'''
+why = "S2.8: день — 12:00 замість 13:00"
+match = "вдень, у обід → 13:00"
+
+[[mutant]]
+id = "M17"
+file = "src/ai/stt.ts"
+old = '''...(initialPrompt === null ? {} : { initial_prompt: initialPrompt }),'''
+new = '''...{},'''
+why = "S2.12: initial_prompt не передається у Whisper"
+match = "initial_prompt"
+
+[[mutant]]
+id = "M18"
+file = "src/texts/uk.ts"
+old = '''  "Дзинь-дзинь! Це воно 🔔",
+  "Тук-тук, ось про що я мав нагадати 📌",
+  "Твій момент настав 🎯",
+];'''
+new = '''];'''
+why = "пул due скорочено до 3 (S2.10.a: ≥ 5)"
+match = "REMIND_DUE_POOL"
