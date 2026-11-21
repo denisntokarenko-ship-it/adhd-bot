@@ -8,6 +8,7 @@ import { createStt, type Stt } from "./ai/stt";
 import { handleExport, handleToday } from "./commands";
 import { handleReminderCallback, isReminderCallback } from "./reminders/buttons";
 import { handleDigestCallback, isDigestCallback } from "./digests/buttons";
+import { handleSettings, handleSettingsCallback, handleTz, isSettingsCallback } from "./settings/handler";
 import { handlePause, handleQuiet, handleQuietCallback, handleResume, isQuietCallback } from "./quiet";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
@@ -64,6 +65,8 @@ const EXPORT_RE = /^\/export(@\w+)?(\s|$)/;
 const PAUSE_RE = /^\/pause(@\w+)?(\s|$)/;
 const RESUME_RE = /^\/resume(@\w+)?(\s|$)/;
 const QUIET_RE = /^\/quiet(@\w+)?(\s|$)/;
+const SETTINGS_RE = /^\/settings(@\w+)?(\s|$)/;
+const TZ_RE = /^\/tz(@\w+)?(\s|$)/;
 const COMMAND_RE = /^\/\w+(@\w+)?(\s|$)/;
 
 export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps): Promise<void> {
@@ -110,6 +113,10 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       await handleResume(ctx, { db, user, clock: deps.clock, rand: deps.rand });
     } else if (QUIET_RE.test(text)) {
       await handleQuiet(ctx);
+    } else if (SETTINGS_RE.test(text)) {
+      await handleSettings(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // без ШІ (S3.7)
+    } else if (TZ_RE.test(text)) {
+      await handleTz(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // `/tz <IANA>`: назва з перевіркою, без «чекаю назву» (S3.7.c)
     } else if (COMMAND_RE.test(text)) {
       // Команди (/today, /foo…) — не захоплення: без запису й без ШІ (S1.4.f).
       await ctx.reply(await nextVariant(user, "soon", SOON_POOL, deps, db));
@@ -150,6 +157,8 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
         toast = await handleReminderCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand });
       } else if (isDigestCallback(ctx.callbackQuery.data)) {
         toast = await handleDigestCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // «показати все» й тиждень (крок 3.1)
+      } else if (isSettingsCallback(ctx.callbackQuery.data)) {
+        toast = await handleSettingsCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // /settings (крок 3.2)
       } else if (isQuietCallback(ctx.callbackQuery.data)) {
         toast = await handleQuietCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // /pause, /quiet (крок 2.4)
       } else {

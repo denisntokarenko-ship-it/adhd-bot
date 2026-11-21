@@ -15,6 +15,20 @@ export type DigestKind = "digest_morning" | "digest_evening" | "digest_weekly";
 export const DIGEST_ORDER: readonly DigestKind[] = ["digest_morning", "digest_weekly", "digest_evening"];
 export const isDigestKind = (k: string): k is DigestKind => (DIGEST_ORDER as readonly string[]).includes(k);
 
+// Які огляди змінюють перепланування (S3.7: morning_at → ранок і тиждень; evening_at → вечір; weekly_dow → тиждень; tz → усі).
+export function affectedDigests(field: "morning_at" | "evening_at" | "weekly_dow" | "tz"): DigestKind[] {
+  switch (field) {
+    case "morning_at":
+      return ["digest_morning", "digest_weekly"];
+    case "evening_at":
+      return ["digest_evening"];
+    case "weekly_dow":
+      return ["digest_weekly"];
+    case "tz":
+      return [...DIGEST_ORDER];
+  }
+}
+
 export interface DigestSettings {
   tz: string;
   morning_at: number;

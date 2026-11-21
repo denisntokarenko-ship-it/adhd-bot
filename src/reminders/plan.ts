@@ -65,6 +65,18 @@ function wallToUtc(ymd: string, minutes: number, tz: string): number {
   return ms;
 }
 
+// Мить кореня ПЛАНУВАЛЬНИКА для запису: `due` запису `all_day` — `morning_at` його локальної дати, `eve_before` події з
+// часом — 20:00 напередодні. Для інших пар (`kind`, запис) — null: їхня мить не залежить від `tz`/`morning_at`.
+// Єдине місце формули: `plannedFor` і перенос коренів при зміні налаштувань (S3.7, S3.8) рахують однаково.
+export function plannerMoment(kind: RootKind, item: PlanItem, user: PlanUser): number | null {
+  if (item.due_at === null) return null;
+  if (kind === "due" && item.all_day === 1) return wallToUtc(localDate(item.due_at, user.tz), user.morning_at, user.tz);
+  if (kind === "eve_before" && item.all_day !== 1 && item.kind === "event") {
+    return wallToUtc(shiftDate(localDate(item.due_at, user.tz), -1), EVE_AT_MIN, user.tz);
+  }
+  return null;
+}
+
 // Які корені нагадувань випливають із запису (таблиця «Звідки береться нагадування»). Рядки «у минулому»
 // (fire_at < now − LATE_MS) не створюються; eve_before — лише якщо 20:00 напередодні ще попереду (> now + 5 хв).
 // Подія не стає important: priority не змінюється, а leave_now ескалюється завжди; eve_before — один раз.
@@ -74,9 +86,9 @@ export function plannedFor(item: PlanItem, now: number, user: PlanUser): Planned
   const byPriority = item.priority === "important" ? MAX_ATTEMPTS_ESCALATING : 1;
   const rows: PlannedRow[] = [];
   if (item.all_day === 1) {
-    rows.push({ kind: "due", fireAt: wallToUtc(localDate(due, user.tz), user.morning_at, user.tz), maxAttempts: byPriority });
+    rows.push({ kind: "due", fireAt: plannerMoment("due", item, user)!, maxAttempts: byPriority });
   } else if (item.kind === "event") {
-    const eve = wallToUtc(shiftDate(localDate(due, user.tz), -1), EVE_AT_MIN, user.tz);
+    const eve = plannerMoment("eve_before", item, user)!;
     if (eve > now + EVE_MIN_LEAD_MS) rows.push({ kind: "eve_before", fireAt: eve, maxAttempts: 1 });
     rows.push({ kind: "leave_now", fireAt: leaveAt(due, item.travel_min), maxAttempts: MAX_ATTEMPTS_ESCALATING });
   } else {
