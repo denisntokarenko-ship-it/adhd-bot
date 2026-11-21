@@ -7,6 +7,7 @@ import { handleCallback, handleText, handleVoice, type CaptureDeps } from "./cap
 import { createStt, type Stt } from "./ai/stt";
 import { handleExport, handleToday } from "./commands";
 import { handleReminderCallback, isReminderCallback } from "./reminders/buttons";
+import { handlePause, handleQuiet, handleQuietCallback, handleResume, isQuietCallback } from "./quiet";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
 import type { AppEnv } from "./env";
@@ -59,6 +60,9 @@ export function captureDepsFor(env: AppEnv, deps: Pick<BotDeps, "clock" | "rand"
 const START_RE = /^\/start(@\w+)?(\s|$)/;
 const TODAY_RE = /^\/today(@\w+)?(\s|$)/;
 const EXPORT_RE = /^\/export(@\w+)?(\s|$)/;
+const PAUSE_RE = /^\/pause(@\w+)?(\s|$)/;
+const RESUME_RE = /^\/resume(@\w+)?(\s|$)/;
+const QUIET_RE = /^\/quiet(@\w+)?(\s|$)/;
 const COMMAND_RE = /^\/\w+(@\w+)?(\s|$)/;
 
 export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps): Promise<void> {
@@ -99,6 +103,12 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       await handleToday(ctx, captureDeps(user)); // без ШІ й без захоплення (S1.10)
     } else if (EXPORT_RE.test(text)) {
       await handleExport(ctx, captureDeps(user)); // без ШІ (S1.11.e)
+    } else if (PAUSE_RE.test(text)) {
+      await handlePause(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // без ШІ (S2.9.e)
+    } else if (RESUME_RE.test(text)) {
+      await handleResume(ctx, { db, user, clock: deps.clock, rand: deps.rand });
+    } else if (QUIET_RE.test(text)) {
+      await handleQuiet(ctx);
     } else if (COMMAND_RE.test(text)) {
       // Команди (/today, /foo…) — не захоплення: без запису й без ШІ (S1.4.f).
       await ctx.reply(await nextVariant(user, "soon", SOON_POOL, deps, db));
@@ -137,6 +147,8 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       if (isReminderCallback(ctx.callbackQuery.data)) {
         // ✅ ⏰ 🗑 👍 і зведення (крок 2.2): тост — відповідь на callback, його ставить handler (відповісти можна лише раз)
         toast = await handleReminderCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand });
+      } else if (isQuietCallback(ctx.callbackQuery.data)) {
+        toast = await handleQuietCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // /pause, /quiet (крок 2.4)
       } else {
         await handleCallback(ctx, captureDeps(user));
       }

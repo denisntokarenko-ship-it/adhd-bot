@@ -72,8 +72,8 @@ export function snoozeKeyboard(id: number, morningAt: number): Keyboard {
   ];
 }
 
-export function singleMessage(head: string, title: string, id: number, kind: string): { text: string; keyboard: Keyboard } {
-  return { text: `${head}\n<b>${clipTitle(title)}</b>`, keyboard: mainKeyboard(id, kind) };
+export function singleMessage(head: string, title: string, id: number, kind: string, when?: string): { text: string; keyboard: Keyboard } {
+  return { text: `${head}\n<b>${clipTitle(title)}</b>${when === undefined ? "" : ` — ${when}`}`, keyboard: mainKeyboard(id, kind) };
 }
 
 export interface SummaryLine {

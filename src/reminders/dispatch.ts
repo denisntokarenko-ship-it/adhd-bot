@@ -9,6 +9,7 @@ import {
   cancelOne,
   closeSent,
   closeSummary,
+  lastSummaryHeadIdx,
   lastVariantIdx,
   parentSentAs,
   releaseLease,
@@ -19,6 +20,7 @@ import {
 import { cancelStaleReminders, claimDueReminders, listQuietUserIds, releaseLeases } from "../db/system";
 import { getDelivery } from "../db/users";
 import type { AppEnv } from "../env";
+import { formatDue } from "../format";
 import { SUMMARY_HEAD_POOL, pickVariant } from "../texts";
 import { CLAIM_LIMIT, RUN_BUDGET_MS, STALE_MS, leaveMoot, nextRepeat, selectBatch, type BatchRow } from "./plan";
 import { poolFor, singleMessage, summaryMessage, type SummaryLine } from "./render";
@@ -135,7 +137,10 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
     }
     const choice = poolFor(r.kind, r.attempt);
     const idx = pickVariant(choice.pool.length, await lastVariantIdx(userId, db, choice.kinds, choice.attempt), c.rand);
-    const msg = singleMessage(choice.pool[idx] ?? choice.pool[0] ?? "", fresh.title, r.id, r.kind);
+    // «Напередодні» і «час виходити» без часу події безглузді (S2.7.f); так само повтор ланцюга події з часом.
+    const withWhen = fresh.due_at !== null && (r.kind === "eve_before" || r.kind === "leave_now" || (r.kind === "repeat" && fresh.kind === "event" && fresh.all_day === 0));
+    const when = withWhen ? formatDue(fresh.due_at!, fresh.all_day === 1, dl.tz, c.clock.now()) : undefined;
+    const msg = singleMessage(choice.pool[idx] ?? choice.pool[0] ?? "", fresh.title, r.id, r.kind, when);
     let sent: { message_id: number };
     try {
       sent = await c.api.sendMessage(dl.tg_id, msg.text, { parse_mode: "HTML", reply_markup: { inline_keyboard: msg.keyboard } });
@@ -179,7 +184,7 @@ async function dispatchUser(c: Ctx, userId: number, claimed: Reminder[]): Promis
 
 async function sendSummary(c: Ctx, userId: number, dl: { tg_id: number; tz: string }, rows: { r: Reminder; item: Item }[]): Promise<void> {
   const { db } = c;
-  const headIdx = pickVariant(SUMMARY_HEAD_POOL.length, null, c.rand);
+  const headIdx = pickVariant(SUMMARY_HEAD_POOL.length, await lastSummaryHeadIdx(userId, db), c.rand);
   const head = SUMMARY_HEAD_POOL[headIdx] ?? "";
   const now = c.clock.now();
   const lines: SummaryLine[] = rows.map(({ r, item }) => ({

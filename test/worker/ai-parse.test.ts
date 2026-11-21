@@ -436,3 +436,45 @@ describe("НФ-5: денний ліміт викликів", () => {
     expect(only(await parseCapture(ctx, "т"))).toHaveLength(1);
   });
 });
+
+// S2.8 (крок 2.4): частина доби → година. Правило живе в системному промпті; код нічого не підміняє, лише рахує
+// `due_local → due_at` за tz. Мок Haiku відповідає так, як велить таблиця правила (живий прогін — 👤, PROGRESS «Рішення»).
+describe("S2.8 «сьогодні ввечері», «завтра зранку» → година в промпті", () => {
+  const NOW_14 = Date.parse("2026-11-20T12:00:00Z"); // 14:00 пт 20.11 за Києвом
+  const promptOf = () => buildPrompt({ text: "т", source: "text", nowLocal: "2026-11-20T14:00", tz: KYIV, weekday: "п'ятниця" }).system;
+
+  it("2.8.a: промпт містить таблицю (ранок 09:00, день 13:00, вечір 19:00), «вночі» → неоднозначно, «день без частини доби — без вигаданої години»", () => {
+    const p = promptOf();
+    expect(p).toMatch(/вранці, зранку, уранці → 09:00/);
+    expect(p).toMatch(/вдень, у обід → 13:00/);
+    expect(p).toMatch(/ввечері, увечері → 19:00/);
+    expect(p).toMatch(/«Вночі» і «на ніч» — дата неоднозначна: due_local=null, date_unclear=true/);
+    expect(p).toMatch(/День без частини доби й без часу — all_day=true: годину не вигадуй/);
+    expect(p).toMatch(/Названа година[^.]*важливіша за таблицю/);
+  });
+
+  const runAt = async (due: string, now: number) => {
+    const m = mock(() => reply(raw({ kind: "task", title: "т", due_local: due })));
+    const { ctx } = await setup({ client: m.client, now });
+    const item = only(await parseCapture(ctx, "т"))[0]!;
+    return { item, system: m.requests[0]!.system };
+  };
+
+  it("2.8.b: «завтра зранку» → завтра 09:00 за tz (07:00Z)", async () => {
+    const { item, system } = await runAt("2026-11-21T09:00", NOW_14);
+    expect(item).toMatchObject({ dueAt: Date.parse("2026-11-21T07:00:00Z"), allDay: false, clarify: null });
+    expect(system).toContain("зранку");
+  });
+  it("2.8.b: «сьогодні ввечері» о 14:00 → сьогодні 19:00 (17:00Z)", async () => {
+    expect((await runAt("2026-11-20T19:00", NOW_14)).item).toMatchObject({ dueAt: Date.parse("2026-11-20T17:00:00Z"), clarify: null });
+  });
+  it("2.8.b: «сьогодні зранку» о 14:00 → 09:00 уже позаду → без дати + питання «дата вже позаду»", async () => {
+    expect((await runAt("2026-11-20T09:00", NOW_14)).item).toMatchObject({ dueAt: null, clarify: "past" });
+  });
+  it("2.8.b: «у п'ятницю вдень» (не сьогодні) → 13:00; «вночі» (date_unclear) → без дати + питання", async () => {
+    expect((await runAt("2026-11-27T13:00", NOW_14)).item).toMatchObject({ dueAt: Date.parse("2026-11-27T11:00:00Z"), clarify: null });
+    const m = mock(() => reply(raw({ due_local: null, date_unclear: true })));
+    const { ctx } = await setup({ client: m.client, now: NOW_14 });
+    expect(only(await parseCapture(ctx, "т"))[0]).toMatchObject({ dueAt: null, clarify: "unclear" });
+  });
+});

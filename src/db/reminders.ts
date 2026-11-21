@@ -116,6 +116,16 @@ export async function lastVariantIdx(userId: number, db: Db, kinds: string[], at
   return row?.variant_idx ?? null;
 }
 
+// Заголовок останнього зведення цього користувача (S2.10.b): усі рядки зведення несуть один `variant_idx` — тож дві
+// різні зведення підряд не починаються однаково. Пам'ять у БД, не в isolate.
+export async function lastSummaryHeadIdx(userId: number, db: Db): Promise<number | null> {
+  const row = await d1Of(db)
+    .prepare("SELECT variant_idx FROM reminders WHERE user_id = ?1 AND sent_as = 'summary' AND variant_idx IS NOT NULL ORDER BY sent_at DESC, id DESC LIMIT 1")
+    .bind(userId)
+    .first<{ variant_idx: number }>();
+  return row?.variant_idx ?? null;
+}
+
 // Збій Telegram, спроба не витрачена (S2.3.c): рядок лишається `pending` з тим самим `fire_at`; `until` — коли
 // його можна брати знову (429: `retry_after`), null — одразу на наступному тику.
 export async function releaseLease(userId: number, db: Db, id: number, until: number | null): Promise<void> {

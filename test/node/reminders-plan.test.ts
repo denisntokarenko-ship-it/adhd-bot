@@ -1,6 +1,6 @@
 // Чисті функції черги нагадувань (docs/spec/phase-2.md S2.1, S2.2, S2.9.d): без БД, час — параметром.
 import { describe, expect, it } from "vitest";
-import { LATE_MS, nextRepeat, plannedFor, shiftForQuiet, type PlanItem } from "../../src/reminders/plan";
+import { LATE_MS, nextLocalMinute, nextRepeat, plannedFor, shiftForQuiet, type PlanItem } from "../../src/reminders/plan";
 
 const KYIV = "Europe/Kyiv";
 const user = { tz: KYIV, morning_at: 540 };
@@ -148,5 +148,20 @@ describe("S2.9 shiftForQuiet — «коли можна слати», за год
     expect(shiftForQuiet(at("2026-11-21T00:00:00Z"), { ...quiet, quiet_from: 600, quiet_to: 600 })).toBe(at("2026-11-21T00:00:00Z"));
     // денне вікно 13:00–15:00 (не через північ): 14:00 → 15:00 того ж дня
     expect(shiftForQuiet(at("2026-11-21T12:00:00Z"), { ...quiet, quiet_from: 780, quiet_to: 900 })).toBe(at("2026-11-21T13:00:00Z"));
+  });
+});
+
+describe("S2.9.e nextLocalMinute — «до ранку» = наступне quiet_to у tz, строго після now", () => {
+  const KYIV = "Europe/Kyiv";
+  it("07:59 → сьогодні 08:00; рівно 08:00:00 → завтра; 12:00 → завтра 08:00", () => {
+    expect(nextLocalMinute(at("2026-11-21T05:59:00Z"), 480, KYIV)).toBe(at("2026-11-21T06:00:00Z"));
+    expect(nextLocalMinute(at("2026-11-21T06:00:00Z"), 480, KYIV)).toBe(at("2026-11-22T06:00:00Z"));
+    expect(nextLocalMinute(at("2026-11-20T10:00:00Z"), 480, KYIV)).toBe(at("2026-11-21T06:00:00Z"));
+  });
+  it("00:30 за Києвом (UTC-дата ще вчорашня) → 08:00 тієї ж локальної доби, а не наступної", () => {
+    expect(nextLocalMinute(at("2026-11-20T22:30:00Z"), 480, KYIV)).toBe(at("2026-11-21T06:00:00Z"));
+  });
+  it("перехід на літній час 29.03: 22:00 28-го → 08:00 29-го за EEST (05:00Z)", () => {
+    expect(nextLocalMinute(at("2026-03-28T20:00:00Z"), 480, KYIV)).toBe(at("2026-03-29T05:00:00Z"));
   });
 });
