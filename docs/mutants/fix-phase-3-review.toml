@@ -31,7 +31,7 @@ match = 'В1 R-3'
 id = "B1b"
 file = "src/db/digests.ts"
 old = '''WHERE id = ?1 AND user_id = ?2 AND (status = 'pending' OR (status = 'cancelled' AND sent_at IS NULL))'''
-new = '''WHERE id = ?1 AND user_id = ?2 AND status = 'pending\''''
+new = '''WHERE id = ?1 AND user_id = ?2 AND status = 'pending' '''
 why = "В1: відправлений, але скасований /settings рядок лишається cancelled -> lastSentFireAt не бачить -> другий огляд"
 match = 'В1 R-3'
 
