@@ -1,12 +1,12 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   REQUIRED_SECRETS,
   checkGit,
-  healthSha,
+  countReleases,
   missingSecrets,
   parseBookmark,
   parseDeploy,
@@ -131,6 +131,13 @@ describe("3.3 реліз: розбір виводу wrangler", () => {
     ]);
     expect(parsePendingMigrations("✘ [ERROR] A request to the Cloudflare API failed")).toBeNull();
   });
+  it("рев'ю 3.3 В2: заголовок є, а ім'я не впізнано (чи рядків нема) — null (стоп), а не «нових немає»", () => {
+    expect(parsePendingMigrations("Migrations to be applied:\n│ 0006_digests.v2.sql │\n")).toBeNull();
+    expect(parsePendingMigrations("Migrations to be applied:\n0006_digests.sql\n")).toBeNull(); // формат таблиці змінився
+    // одне ім'я впізнано, друге ні — теж стоп: список для журналу й відкату має бути повним
+    expect(parsePendingMigrations(ML_FIVE.replace("0003_points.sql   ", "0003_points.v2.sql"))).toBeNull();
+    expect(parsePendingMigrations(ML_FIVE.replaceAll("\n", "\r\n"))).toHaveLength(5); // CRLF з Windows — не збій
+  });
   it("секрети: назви НФ-8, яких бракує", () => {
     expect(REQUIRED_SECRETS).toEqual(["BOT_TOKEN", "WEBHOOK_SECRET", "ALLOWED_TG_IDS", "MONITOR_PING_URL", "ANTHROPIC_API_KEY"]);
     expect(missingSecrets(secretsJson([...REQUIRED_SECRETS]))).toEqual([]);
@@ -144,6 +151,15 @@ describe("3.3 реліз: розбір виводу wrangler", () => {
   it("deployments status: version_id на 100 %, без Worker-а — null", () => {
     expect(parseDeployedVersion(DEPLOYMENTS)).toBe("da2f32a9-9d89-4732-af5f-fedfb336f35d");
     expect(parseDeployedVersion("✘ [ERROR] This Worker does not exist on your account.")).toBeNull();
+  });
+  it("рев'ю 3.3 Д3: поступова викатка (жодної на 100 %) — null: ціллю відкату могла б стати нова версія", () => {
+    const split = JSON.stringify({ versions: [ { version_id: "new-50", percentage: 50 }, { version_id: "old-50", percentage: 50 } ] });
+    expect(parseDeployedVersion(split)).toBeNull();
+  });
+  it("рев'ю 3.3 Д2: журнал викаток — рахуються лише рядки з датою", () => {
+    const journal = readFileSync(path.join(ROOT, "docs/releases.md"), "utf8");
+    expect(countReleases(journal)).toBe(0); // заголовок і |---| — не викатки
+    expect(countReleases(`${journal}| 2026-11-25 | \`c729d55\` | 0001_init | \`b\` | ✅ |\n`)).toBe(1);
   });
   it("deploy: адреса prod, cron активний, id версії", () => {
     expect(parseDeploy(DEPLOY_OK)).toEqual({
@@ -186,10 +202,6 @@ describe("3.10.a /health prod після деплою", () => {
     expect(verifyHealth('{"ok":false,"error":"db"}', SHA).length).toBeGreaterThan(0);
     expect(verifyHealth("error code: 1042", SHA)).toEqual(["/health повернув не JSON"]);
   });
-  it("healthSha для перевірки «preview не зачеплено»", () => {
-    expect(healthSha(health())).toBe(SHA);
-    expect(healthSha("<html>")).toBeNull();
-  });
 });
 
 describe("3.3 рядок docs/releases.md", () => {
@@ -230,7 +242,7 @@ describe("3.3 release.sh: порядок кроків і межі dry-run", () =
   });
 
   it("секрети зі змінних оболонки не успадковуються (токен preview не потрапить у prod)", () => {
-    expect(at("unset BOT_TOKEN WEBHOOK_SECRET")).toBeLessThan(at("read -r -s"));
+    expect(at("unset BOT_TOKEN WEBHOOK_SECRET API_ROOT")).toBeLessThan(at("read -r -s"));
     expect(sh).toMatch(/BOT_TOKEN="\$PROD_TOKEN" node scripts\/set-commands\.mjs/);
   });
 
@@ -295,5 +307,177 @@ esac`);
     }
     expect(npx).not.toMatch(/migrations apply|deploy --env|rollback|secret put|restore/);
     expect(r.stdout).not.toContain("BOT_TOKEN prod-бота");
+  });
+});
+
+// Справжній шлях (рев'ю 3.3, В4): не dry, HEAD = origin/main, prod D1 створено — кроки 4–10 до кінця.
+// Копія скрипта в теці під node_modules (release-lib.mjs імпортує smol-toml — Node знайде його вгору по дереву)
+// з wrangler.toml, де prod D1 має id, і з заглушкою set-commands.mjs: жодної мережі, prod, Telegram.
+// release.sh і release-lib.mjs копіюються з репо в момент тесту — мутанти scripts/mutate.py ловляться.
+// Прапорці сценарію — файли в теці: status-fail, bookmark-bad, apply-noop, deploy-no-cron, deploy-touches-preview, health-bad.
+describe("3.3 release.sh: справжній шлях (підмінні git/npm/npx/curl/sleep)", () => {
+  const MAIN = "c".repeat(40);
+  const PREV = "da2f32a9-9d89-4732-af5f-fedfb336f35d";
+  const PREVIEW_V1 = "11111111-aaaa-4bbb-8ccc-000000000001";
+  const PREVIEW_V2 = "22222222-aaaa-4bbb-8ccc-000000000002";
+  const JOURNAL = readFileSync(path.join(ROOT, "docs/releases.md"), "utf8");
+  const ONE_RELEASE = `${JOURNAL}| 2026-11-25 | \`ccccccc\` | 0001_init | \`${BOOKMARK}\` | ✅ |\n`;
+  const sandboxes: string[] = [];
+  afterAll(() => sandboxes.forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const posix = (p: string) => p.split(path.sep).join("/");
+
+  function sandbox(flags: string[] = [], journal = ONE_RELEASE) {
+    const w = mkdtempSync(path.join(ROOT, "node_modules", ".release-e2e-"));
+    sandboxes.push(w);
+    const W = posix(w);
+    for (const d of ["scripts", "docs", "bin"]) mkdirSync(path.join(w, d));
+    for (const f of ["release.sh", "release-lib.mjs"]) writeFileSync(path.join(w, "scripts", f), readFileSync(path.join(ROOT, "scripts", f)));
+    writeFileSync(
+      path.join(w, "scripts/set-commands.mjs"),
+      `import { appendFileSync } from "node:fs";\nappendFileSync("${W}/calls.log", \`set-commands token=\${process.env.BOT_TOKEN ?? ""} api_root=\${process.env.API_ROOT ?? ""}\\n\`);\n`,
+    );
+    writeFileSync(
+      path.join(w, "wrangler.toml"),
+      readFileSync(path.join(ROOT, "wrangler.toml"), "utf8").replace("REPLACE_WITH_PROD_D1_ID", "9e0c3a51-1b2c-4d3e-8f40-5a6b7c8d9e0f"),
+    );
+    writeFileSync(path.join(w, "docs/releases.md"), journal);
+    for (const f of flags) writeFileSync(path.join(w, f), "");
+    const shim = (name: string, body: string) => writeFileSync(path.join(w, "bin", name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    const has = (f: string) => `[ -f "${W}/${f}" ]`;
+    const version = (id: string) => `echo '{"versions":[{"version_id":"${id}","percentage":100}]}'`;
+    shim("git", `case "$*" in "rev-parse HEAD"|"rev-parse origin/main") echo ${MAIN} ;; *) : ;; esac`);
+    shim("npm", `echo "      Tests  1 passed (1)"`);
+    shim("sleep", ":");
+    shim(
+      "npx",
+      `echo "npx $*" >> "${W}/calls.log"
+case "$*" in
+  *"secret list"*) printf '%s' '${JSON.stringify(REQUIRED_SECRETS.map((name) => ({ name, type: "secret_text" })))}' ;;
+  *"deployments status --env preview"*) if ${has("deployed")} && ${has("deploy-touches-preview")}; then ${version(PREVIEW_V2)}; else ${version(PREVIEW_V1)}; fi ;;
+  *"deployments status"*) if ${has("status-fail")}; then echo "✘ [ERROR] A request to the Cloudflare API failed (code 10000)"; exit 1; fi; ${version(PREV)} ;;
+  *"time-travel info"*) if ${has("bookmark-bad")}; then echo '{"bookmark": "latest"}'; else echo '{"bookmark": "${BOOKMARK}"}'; fi ;;
+  *"migrations list"*) if ${has("applied")}; then echo "No migrations to apply!"; else printf 'Migrations to be applied:\\n│ Name          │\\n│ 0006_next.sql │\\n'; fi ;;
+  *"migrations apply"*) ${has("apply-noop")} || touch "${W}/applied" ;;
+  *"deploy --env"*) touch "${W}/deployed"; echo "Uploaded adhd-bot-prod"; echo "  https://adhd-bot-prod.example-sub.workers.dev"
+    ${has("deploy-no-cron")} || echo "  schedule: * * * * *"; echo "Current Version ID: b8c9b7ae-8459-426c-b26f-f2db972f1633" ;;
+esac`,
+    );
+    // curl: prod /health; і preview /health — його читав старий код (до виправлення В3), тож заглушка чесна для обох
+    shim(
+      "curl",
+      `echo "curl $*" >> "${W}/calls.log"
+case "$*" in
+  *adhd-bot-preview*) if ${has("deployed")} && ${has("deploy-touches-preview")}; then S=${"e".repeat(40)}; else S=${"d".repeat(40)}; fi
+    echo "{\\"ok\\":true,\\"env\\":\\"preview\\",\\"sha\\":\\"$S\\",\\"cron\\":{\\"stale\\":false}}" ;;
+  *) if ${has("health-bad")}; then ST=true; else ST=false; fi
+    echo "{\\"ok\\":true,\\"env\\":\\"production\\",\\"sha\\":\\"${MAIN}\\",\\"cron\\":{\\"last_run_at\\":1,\\"age_s\\":30,\\"stale\\":$ST}}" ;;
+esac`,
+    );
+    const run = (args: string[], input: string) => {
+      const r = spawnSync("bash", ["scripts/release.sh", ...args], {
+        cwd: w,
+        input,
+        encoding: "utf8",
+        timeout: 90_000,
+        // API_ROOT і BOT_TOKEN з оболонки не мають дійти до set-commands (Д4, M17)
+        env: {
+          ...process.env,
+          PATH: `${path.join(w, "bin")}${path.delimiter}${process.env.PATH}`,
+          RELEASE_LOG_DIR: path.join(w, "logs"),
+          API_ROOT: "http://127.0.0.1:9",
+          BOT_TOKEN: "PREVIEW-TOKEN",
+        },
+      });
+      const calls = existsSync(path.join(w, "calls.log")) ? readFileSync(path.join(w, "calls.log"), "utf8") : "";
+      const logs = path.join(w, "logs");
+      const rb = existsSync(logs) ? readdirSync(logs).map((d) => path.join(logs, d, "rollback.txt")).find((f) => existsSync(f)) : undefined;
+      return { ...r, out: r.stdout + r.stderr, calls, rollback: rb ? readFileSync(rb, "utf8") : "" };
+    };
+    return { run };
+  }
+  const T = { timeout: 120_000 };
+  const YES = "так\nTEST-TOKEN\n";
+
+  it("«так»: усі 10 кроків, rollback.txt на попередню версію, меню з токеном prod і без API_ROOT", T, () => {
+    const r = sandbox().run([], YES);
+    expect(r.status, r.out).toBe(0);
+    expect(r.stdout).toContain("== Готово");
+    expect(r.stdout).toContain("/health prod: ok");
+    expect(r.stdout).toContain("preview не зачеплено");
+    expect(r.calls).toContain("migrations apply adhd-prod --env production --remote");
+    expect(r.calls).toContain(`deploy --env production --var GIT_SHA:${MAIN}`);
+    expect(r.calls).toContain("set-commands token=TEST-TOKEN api_root=\n");
+    expect(r.rollback).toContain(`npx wrangler rollback ${PREV} --env production`);
+    expect(r.rollback).toContain(`--bookmark=${BOOKMARK}`);
+    expect(r.rollback).not.toContain("deleteWebhook");
+    expect(r.stdout).toContain("| 0006_next |");
+  });
+
+  it("R4: відповідь «ні» — стоп до міграцій і деплою", T, () => {
+    const r = sandbox().run([], "ні\n");
+    expect(r.status, r.out).toBe(1);
+    expect(r.stderr).toContain("людина не підтвердила");
+    expect(r.calls).not.toMatch(/migrations apply|deploy --env/);
+  });
+
+  it("R1: після apply міграції лишились — стоп до деплою", T, () => {
+    const r = sandbox(["apply-noop"]).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stderr).toContain("після apply лишились: 0006_next.sql");
+    expect(r.calls).not.toContain("deploy --env");
+  });
+
+  it("R3: bookmark не розібрано — стоп до міграцій (без точки відкату БД не застосовую)", T, () => {
+    const r = sandbox(["bookmark-bad"]).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stderr).toContain("не розібрав bookmark");
+    expect(r.calls).not.toMatch(/migrations apply|deploy --env/);
+  });
+
+  it("R2: /health prod stale усі 4 спроби — стоп, а не «Готово»", T, () => {
+    const r = sandbox(["health-bad"]).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stdout).toContain("спроба 4");
+    expect(r.stderr).toContain("/health prod: cron.stale = true");
+    expect(r.stdout).not.toContain("== Готово");
+  });
+
+  it("рев'ю 3.3 В1: збій deployments status без --first — стоп до міграцій, а не «перша викатка → deleteWebhook»", T, () => {
+    const r = sandbox(["status-fail"]).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stderr).toContain("не визначив версію prod на 100 %");
+    expect(r.calls).not.toMatch(/migrations apply|deploy --env/);
+    expect(r.rollback).not.toContain("deleteWebhook");
+  });
+
+  it("рев'ю 3.3 В3: деплой зачепив preview — стоп «3.10.a не доведено», а не «✓ preview не зачеплено»", T, () => {
+    const r = sandbox(["deploy-touches-preview"]).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stdout).not.toContain("preview не зачеплено");
+    expect(r.stderr).toContain(`версія preview до міграцій «${PREVIEW_V1}», після /health «${PREVIEW_V2}»`);
+    // «до» знято раніше за перший запис у prod
+    expect(r.calls.indexOf("deployments status --env preview")).toBeLessThan(r.calls.indexOf("migrations apply"));
+  });
+
+  it("рев'ю 3.3 Д1: деплой пройшов, cron не прив'язався — у «Зроблено» сказано, що код може бути живим", T, () => {
+    const r = sandbox(["deploy-no-cron"]).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stderr).toContain("cron не активний");
+    expect(r.stdout).toMatch(/Зроблено до зупинки:[\s\S]*нова версія може бути вже живою/);
+  });
+
+  it("рев'ю 3.3 Д2: журнал порожній, а --first забули — стоп до міграцій (інакше відкат на заглушку secret put)", T, () => {
+    const r = sandbox([], JOURNAL).run([], YES);
+    expect(r.status, r.out).toBe(1);
+    expect(r.stderr).toContain("у docs/releases.md жодної викатки");
+    expect(r.calls).not.toMatch(/migrations apply|deploy --env/);
+  });
+
+  it("--first на порожньому журналі: Worker-а ще нема (status падає) — реліз іде, відкат = deleteWebhook, друкує setWebhook", T, () => {
+    const r = sandbox(["status-fail"], JOURNAL).run(["--first"], YES);
+    expect(r.status, r.out).toBe(0);
+    expect(r.rollback).toContain("deleteWebhook");
+    expect(r.rollback).not.toContain("wrangler rollback");
+    expect(r.stdout).toContain("node scripts/set-webhook.mjs https://adhd-bot-prod.example-sub.workers.dev/webhook");
   });
 });

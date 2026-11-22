@@ -11,7 +11,7 @@ type Cfg = {
   d1_databases?: unknown;
   triggers?: unknown;
   workers_dev?: boolean;
-  env: Record<string, { name?: string; workers_dev?: boolean; vars?: Record<string, string>; triggers?: { crons?: string[] }; d1_databases?: { binding: string; database_name: string; database_id: string }[] }>;
+  env: Record<string, { name?: string; workers_dev?: boolean; preview_urls?: boolean; vars?: Record<string, string>; triggers?: { crons?: string[] }; d1_databases?: { binding: string; database_name: string; database_id: string }[] }>;
 };
 const cfg = parse(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8")) as unknown as Cfg;
 const preview = cfg.env.preview!;
@@ -44,6 +44,10 @@ describe("S0.5 два оточення (wrangler.toml)", () => {
     expect(cfg.workers_dev).toBe(false);
     expect(preview.workers_dev).toBe(true);
     expect(prod.workers_dev).toBe(true);
+  });
+
+  it("рев'ю 3.3 Д5: prod без Preview URLs — жодної публічної адреси версії з prod-біндингами", () => {
+    expect(prod.preview_urls).toBe(false);
   });
 
   it("змінна ENV різна в оточеннях і збігається з назвою", () => {

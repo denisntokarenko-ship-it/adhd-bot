@@ -45,10 +45,15 @@ export function parseBookmark(text) {
 }
 
 // `wrangler d1 migrations list … --remote`: «No migrations to apply» → [], таблиця імен → список; інше → null (не вгадуємо).
+// Кожен рядок таблиці «│ … │» (крім заголовка Name) має бути іменем міграції: заголовок є, а рядків 0 або хоч один
+// не впізнано → null (стоп), а не «нових немає» (рев'ю 3.3, В2: інакше apply пропускається, код іде на стару схему).
+const MIGRATION_NAME = /^\d{4}_[A-Za-z0-9_-]+\.sql$/;
 export function parsePendingMigrations(text) {
   if (/No migrations to apply/i.test(text)) return [];
   if (!/Migrations to be applied/i.test(text)) return null;
-  return [...text.matchAll(/\b(\d{4}_[A-Za-z0-9_-]+\.sql)\b/g)].map((m) => m[1]);
+  const rows = [...text.matchAll(/^\s*│\s*(.*?)\s*│\s*$/gm)].map((m) => m[1]).filter((c) => c !== "Name");
+  if (rows.length === 0 || rows.some((r) => !MIGRATION_NAME.test(r))) return null;
+  return rows;
 }
 
 // `wrangler secret list --env production` (JSON-масив {name,type}) → яких назв НФ-8 бракує.
@@ -58,12 +63,13 @@ export function missingSecrets(text) {
 }
 
 // `wrangler deployments status --env … --json` → version_id на 100 % (ціль відкату коду). Немає Worker-а → null.
+// Поступова викатка (жодної версії на 100 %) → null: «перша зі списку» може бути якраз новою (рев'ю 3.3, Д3).
 export function parseDeployedVersion(text) {
   const start = text.indexOf("{");
   if (start < 0) return null;
   try {
     const json = JSON.parse(text.slice(start, text.lastIndexOf("}") + 1));
-    const v = (json.versions ?? []).find((x) => x.percentage === 100) ?? json.versions?.[0];
+    const v = (json.versions ?? []).find((x) => x.percentage === 100);
     return typeof v?.version_id === "string" ? v.version_id : null;
   } catch {
     return null;
@@ -99,13 +105,9 @@ export function verifyHealth(bodyText, sha, env = PROD_ENV) {
   return problems;
 }
 
-export function healthSha(bodyText) {
-  try {
-    const sha = JSON.parse(bodyText).sha;
-    return typeof sha === "string" ? sha : null;
-  } catch {
-    return null;
-  }
+// docs/releases.md: скільки викаток уже записано (рядки таблиці з датою). 0 → це перша викатка (рев'ю 3.3, Д2).
+export function countReleases(text) {
+  return text.split("\n").filter((l) => /^\|\s*\d{4}-\d{2}-\d{2}\s*\|/.test(l)).length;
 }
 
 // Рядок для docs/releases.md (без персональних даних: ні tg_id, ні текстів, ні адрес пінгу).
@@ -184,8 +186,8 @@ function main(argv) {
       problems.forEach(out);
       return problems.length ? 1 : 0;
     }
-    case "health-sha":
-      out(healthSha(stdin()) ?? "");
+    case "release-count":
+      out(String(countReleases(stdin())));
       return 0;
     case "release-line":
       out(releaseLine({ date: args[0], sha: args[1], bookmark: args[2], migrations: args.slice(3) }));

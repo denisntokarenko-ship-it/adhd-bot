@@ -32,6 +32,9 @@ name = "adhd-bot-prod"
 # Адреса prod — adhd-bot-prod.<піддомен>.workers.dev (open-questions «Фаза 3», рекомендація; чекає підтвердження Дениса).
 # Без неї Worker недосяжний і вебхуку нікуди вказати (S3.10 п. 3). Свій домен — після MVP.
 workers_dev = true
+# Без зайвих публічних адрес <версія>-adhd-bot-prod.… з prod-біндингами: wrangler 4.165 за замовчуванням вмикає
+# Preview URLs разом із workers.dev (рев'ю 3.3, Д5). Рішення про workers_dev (Q5) це не змінює.
+preview_urls = false
 vars = { ENV = "production" }
 
 [env.production.ai]

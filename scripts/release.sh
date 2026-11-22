@@ -19,7 +19,8 @@ for a in "$@"; do
     *) echo "Невідомий прапорець: $a (є --dry-run, --first, --yes)"; exit 2 ;;
   esac
 done
-unset BOT_TOKEN WEBHOOK_SECRET
+# API_ROOT — теж: з ним крок 9 (меню команд) шле токен prod-бота на інший хост (рев'ю 3.3, Д4).
+unset BOT_TOKEN WEBHOOK_SECRET API_ROOT
 
 ENV=production
 LIB="node scripts/release-lib.mjs"
@@ -36,6 +37,8 @@ fail() {
   [ -n "${ROLLBACK_FILE:-}" ] && echo "Команди відкату: $ROLLBACK_FILE (docs/RUNBOOK.md, «Відкат»)"
   exit 1
 }
+# Справжній реліз — стоп; dry-run — попередження (він лише показує, що зупинить реліз).
+stop_or_warn() { if [ $DRY = 1 ]; then echo "   ⚠ $*"; else fail "$*"; fi; }
 
 SHA=$(git rev-parse HEAD)
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
@@ -80,10 +83,31 @@ MISSING=$($LIB secrets < "$LOG_DIR/secrets.log") || {
 }
 [ -z "$MISSING" ] && ok "усі 5 секретів НФ-8 є"
 
-step "5. Поточна версія коду й bookmark D1 (точки відкату)"
-$WR deployments status --env $ENV --json > "$LOG_DIR/deployments.log" 2>&1
-PREV_VERSION=$($LIB deployed-version < "$LOG_DIR/deployments.log")
-echo "   версія до релізу: ${PREV_VERSION:-немає (перша викатка)}"
+step "5. Поточні версії коду (prod, preview) й bookmark D1 (точки відкату)"
+# Перша викатка — лише явно (--first) і лише коли журнал порожній: secret put (RUNBOOK §2) уже створив Worker-заглушку,
+# тож за deployments status першу викатку не впізнати (рев'ю 3.3, Д2).
+RELEASES=$($LIB release-count < docs/releases.md) || fail "не прочитав docs/releases.md"
+[ $FIRST = 1 ] || [ "$RELEASES" != 0 ] || stop_or_warn "у docs/releases.md жодної викатки: перша — npm run release -- --first (RUNBOOK §3); ні — допиши рядок попереднього релізу"
+# Ціль відкату коду: без --first версія на 100 % обов'язкова. Збій wrangler чи поступова викатка — стоп,
+# а не «перша викатка → deleteWebhook» (рев'ю 3.3, В1). Вивід (там пошта автора) — лише у файл.
+PREV_VERSION=""
+if $WR deployments status --env $ENV --json > "$LOG_DIR/deployments.log" 2>&1; then
+  PREV_VERSION=$($LIB deployed-version < "$LOG_DIR/deployments.log")
+fi
+if [ $FIRST = 1 ]; then
+  echo "   перша викатка (--first): відкат коду — deleteWebhook (RUNBOOK, «Відкат»)"
+elif [ -n "$PREV_VERSION" ]; then
+  echo "   версія до релізу: $PREV_VERSION"
+else
+  stop_or_warn "не визначив версію prod на 100 % (deployments status, журнал $LOG_DIR/deployments.log) — без цілі відкату коду не викочую"
+fi
+# «preview не зачеплено» (3.10.a): версію preview знімаю ДО міграцій і деплою, інакше порівняння не почервоніє (рев'ю 3.3, В3).
+PREVIEW_VERSION=""
+if $WR deployments status --env preview --json > "$LOG_DIR/preview-before.log" 2>&1; then
+  PREVIEW_VERSION=$($LIB deployed-version < "$LOG_DIR/preview-before.log")
+fi
+[ -n "$PREVIEW_VERSION" ] || stop_or_warn "не прочитав версію preview — «preview не зачеплено» не буде чим довести"
+echo "   версія preview: ${PREVIEW_VERSION:-—}"
 $WR d1 time-travel info "$DB" --env $ENV --json > "$LOG_DIR/bookmark.log" 2>&1 || { tail -5 "$LOG_DIR/bookmark.log"; fail "time-travel info"; }
 BOOKMARK=$($LIB bookmark < "$LOG_DIR/bookmark.log") || fail "не розібрав bookmark"
 echo "   bookmark: $BOOKMARK"
@@ -92,10 +116,10 @@ if [ $DRY = 0 ]; then
   {
     echo "# Відкат релізу ${SHA:0:12} ($STAMP UTC). Порядок і умови — docs/RUNBOOK.md, «Відкат»."
     echo "# 1) Код:"
-    if [ $FIRST = 0 ] && [ -n "$PREV_VERSION" ]; then
-      echo "npx wrangler rollback $PREV_VERSION --env $ENV -m \"rollback ${SHA:0:7}\""
-    else
+    if [ $FIRST = 1 ]; then
       echo "# перша викатка: робочої попередньої версії немає — бот замовкає через deleteWebhook (RUNBOOK, «Відкат»)"
+    else
+      echo "npx wrangler rollback $PREV_VERSION --env $ENV -m \"rollback ${SHA:0:7}\""
     fi
     echo "# 2) БД (лише якщо міграція зламала дані; все, що записано після bookmark, зникне):"
     echo "npx wrangler d1 time-travel restore $DB --env $ENV --bookmark=$BOOKMARK"
@@ -132,6 +156,8 @@ else
 fi
 
 step "8. Деплой з GIT_SHA"
+# До розбору виводу: якщо далі стоп, людина має знати, що код, можливо, уже живий і його треба відкотити (рев'ю 3.3, Д1).
+DONE+=("запущено wrangler deploy — нова версія може бути вже живою (відкат — rollback.txt)")
 $WR deploy --env $ENV --var "GIT_SHA:$SHA" > "$LOG_DIR/deploy.log" 2>&1 || { tail -15 "$LOG_DIR/deploy.log"; fail "wrangler deploy"; }
 DEPLOY=$($LIB deploy < "$LOG_DIR/deploy.log") || { echo "$DEPLOY"; fail "деплой без адреси або без cron"; }
 URL=$(echo "$DEPLOY" | sed -n 's/^url=//p')
@@ -146,8 +172,6 @@ unset PROD_TOKEN
 ok "меню команд виставлено"
 
 step "10. Чекаю 2 хв і перевіряю /health"
-PREVIEW_URL=$(echo "$URL" | sed 's#//adhd-bot-prod\.#//adhd-bot-preview.#')
-PREVIEW_SHA=$(curl -fsS --max-time 10 "$PREVIEW_URL/health" | $LIB health-sha)
 sleep 120
 for i in 1 2 3 4; do
   curl -sS --max-time 10 "$URL/health" > "$LOG_DIR/health.json" 2>&1
@@ -157,12 +181,13 @@ for i in 1 2 3 4; do
 done
 [ -z "$PROBLEMS" ] || fail "/health prod: $PROBLEMS"
 ok "/health prod: ok, sha = HEAD, cron не stale"
-PREVIEW_SHA_AFTER=$(curl -fsS --max-time 10 "$PREVIEW_URL/health" | $LIB health-sha)
-if [ -n "$PREVIEW_SHA" ] && [ "$PREVIEW_SHA" = "$PREVIEW_SHA_AFTER" ]; then
-  ok "preview не зачеплено (sha ${PREVIEW_SHA:0:7})"
-else
-  echo "   ⚠ preview /health: до «${PREVIEW_SHA:0:7}», після «${PREVIEW_SHA_AFTER:0:7}» — перевір вручну"
+PREVIEW_AFTER=""
+if $WR deployments status --env preview --json > "$LOG_DIR/preview-after.log" 2>&1; then
+  PREVIEW_AFTER=$($LIB deployed-version < "$LOG_DIR/preview-after.log")
 fi
+[ -n "$PREVIEW_VERSION" ] && [ "$PREVIEW_VERSION" = "$PREVIEW_AFTER" ] ||
+  fail "3.10.a не доведено: версія preview до міграцій «${PREVIEW_VERSION:-—}», після /health «${PREVIEW_AFTER:-—}». Prod здоровий (вище) — відкочувати його через це не треба; з'ясуй, хто чіпав preview"
+ok "preview не зачеплено (версія ${PREVIEW_VERSION:0:8} до міграцій = після /health)"
 
 step "Готово"
 for d in "${DONE[@]}"; do echo "  - $d"; done
