@@ -35,11 +35,21 @@ function offsetAt(ms: number, tz: string): number {
   return asUtc - Math.floor(ms / 1000) * 1000;
 }
 
-// UTC-момент локальної півночі дати y-m-d: два наближення, бо зсув залежить від самого моменту.
+// «Стінний» час (UTC-поле) → UTC-мить у `tz`. Літній час (НФ-1): неіснуюча година (весняний «стрибок») зсувається
+// вперед — береться зсув ДО переходу; подвійна година (осіння) — перше, раніше входження.
+function resolveWall(wall: number, tz: string): number {
+  const before = offsetAt(wall - MS_PER_DAY, tz);
+  const after = offsetAt(wall + MS_PER_DAY, tz);
+  const candidates = [...new Set([before, after])].map((o) => wall - o).filter((c) => offsetAt(c, tz) === wall - c);
+  if (candidates.length === 0) return wall - before; // «діра» весняного переходу
+  return Math.min(...candidates); // подвійна година → раніше входження
+}
+
+// UTC-момент початку локальної доби y-m-d. Той самий розв'язувач, що в `localToUtc`: для поясів, де літній перехід
+// припадає на північ (`America/Santiago`, 6.09.2026: 00:00 → 01:00), півночі не існує, і доба починається в мить
+// переходу, а не на годину раніше (борг рев'ю 1.1 Д2: наближення «два кроки» давало 24 год замість 23).
 function localMidnight(y: number, m: number, d: number, tz: string): number {
-  const wall = Date.UTC(y, m - 1, d);
-  const first = wall - offsetAt(wall, tz);
-  return wall - offsetAt(first, tz);
+  return resolveWall(Date.UTC(y, m - 1, d), tz);
 }
 
 // [startMs, endMs) локальної доби, що містить `instant`. Доба може мати 23 або 25 годин.
@@ -81,11 +91,7 @@ export function localToUtc(local: string, tz: string): number | null {
   const check = new Date(wall);
   // Date.UTC «перекручує» неіснуючі дати (30 лютого → 2 березня): звіряємо поля.
   if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return null;
-  const before = offsetAt(wall - MS_PER_DAY, tz);
-  const after = offsetAt(wall + MS_PER_DAY, tz);
-  const candidates = [...new Set([before, after])].map((o) => wall - o).filter((c) => offsetAt(c, tz) === wall - c);
-  if (candidates.length === 0) return wall - before; // «діра» весняного переходу
-  return Math.min(...candidates); // подвійна година → раніше входження
+  return resolveWall(wall, tz);
 }
 
 // Хвилини від локальної півночі (0..1439) за годинником `tz`.
