@@ -1,0 +1,160 @@
+# Мутанти кроку 3.3 (scripts/release-lib.mjs, scripts/release.sh) — кожен ламає одне рішення «можна далі / стоп».
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/3.3.toml --report docs/mutants/3.3.md
+test = "npx vitest run --project node --reporter=dot test/node/release.test.ts test/node/wrangler-config.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "scripts/release-lib.mjs"
+old = '''return dryRun ? { fatal: [], warn: problems } : { fatal: problems, warn: [] };'''
+new = '''return { fatal: [], warn: problems };'''
+why = "реліз без --dry-run не відмовляє на гілці"
+match = 'без --dry-run: СТОП на кроці git'
+
+[[mutant]]
+id = "M2"
+file = "scripts/release-lib.mjs"
+old = '''else if (head !== originMain)'''
+new = '''else if (false)'''
+why = "HEAD ≠ origin/main не помічається"
+match = 'гілка \(HEAD ≠ origin/main\) без --dry-run'
+
+[[mutant]]
+id = "M3"
+file = "scripts/release-lib.mjs"
+old = '''if (!head || !originMain) problems.push'''
+new = '''if (false) problems.push'''
+why = "не прочитаний origin/main рахується як «збігається»"
+match = 'не прочитали origin/main'
+
+[[mutant]]
+id = "M4"
+file = "scripts/release-lib.mjs"
+old = '''if (id === "" || id === PLACEHOLDER_D1_ID) {'''
+new = '''if (id === "") {'''
+why = "заглушка REPLACE_WITH_PROD_D1_ID рахується створеною БД"
+match = 'заглушка REPLACE_WITH_PROD_D1_ID'
+
+[[mutant]]
+id = "M5"
+file = "scripts/release-lib.mjs"
+old = '''if (typeof b !== "string" || !/^[0-9a-f]{8}(-[0-9a-f]+){3}$/.test(b))'''
+new = '''if (typeof b !== "string")'''
+why = "порожній чи вигаданий bookmark іде в rollback.txt"
+match = 'bookmark: не JSON або не схожий'
+
+[[mutant]]
+id = "M6"
+file = "scripts/release-lib.mjs"
+old = '''if (!/Migrations to be applied/i.test(text)) return null;'''
+new = '''if (false) return null;'''
+why = "помилка API в migrations list читається як «нових міграцій немає»"
+match = 'migrations list: нічого'
+
+[[mutant]]
+id = "M7"
+file = "scripts/release-lib.mjs"
+old = '''return REQUIRED_SECRETS.filter((n) => !names.has(n));'''
+new = '''return [];'''
+why = "реліз без секретів (monitor missing, бот без токена)"
+match = 'секрети: назви НФ-8'
+
+[[mutant]]
+id = "M8"
+file = "scripts/release-lib.mjs"
+old = '''const cronActive = /schedule:\s*\* \* \* \* \*/.test(text);'''
+new = '''const cronActive = true;'''
+why = "деплой без активного cron проходить"
+match = 'deploy без schedule'
+
+[[mutant]]
+id = "M9"
+file = "scripts/release-lib.mjs"
+old = '''new RegExp(`https://${esc}\\.[a-z0-9-]+\\.workers\\.dev`)'''
+new = '''new RegExp(`https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev`)'''
+why = "адреса preview з виводу береться за адресу prod (health не того Worker-а)"
+match = 'адреса preview за prod не рахується'
+
+[[mutant]]
+id = "M10"
+file = "scripts/release-lib.mjs"
+old = '''if (body.sha !== sha) problems.push'''
+new = '''if (false) problems.push'''
+why = "/health зі старим sha (деплой не доїхав) — зелений"
+match = 'старий sha'
+
+[[mutant]]
+id = "M11"
+file = "scripts/release-lib.mjs"
+old = '''if (body.cron?.stale !== false) problems.push'''
+new = '''if (body.cron?.stale === true) problems.push'''
+why = "cron, що ще не бився (stale відсутній), — зелений"
+match = 'cron stale або ще не бився'
+
+[[mutant]]
+id = "M12"
+file = "scripts/release-lib.mjs"
+old = '''if (body.monitor === "missing") problems.push'''
+new = '''if (false) problems.push'''
+why = "monitor: missing не названо причиною"
+match = 'monitor missing'
+
+[[mutant]]
+id = "M13"
+file = "scripts/release-lib.mjs"
+old = '''if (body.env !== env) problems.push'''
+new = '''if (false) problems.push'''
+why = "відповідь preview зараховано як prod"
+match = 'відповів preview, а не prod'
+
+[[mutant]]
+id = "M14"
+file = "scripts/release.sh"
+old = '''  echo "DRY-RUN завершено: перевірки пройдено, нічого не застосовано й не задеплоєно."
+  exit 0'''
+new = '''  echo "DRY-RUN завершено: перевірки пройдено, нічого не застосовано й не задеплоєно."'''
+why = "dry-run з prod D1 іде далі в apply і deploy"
+match = 'обидва виходи dry-run'
+
+[[mutant]]
+id = "M15"
+file = "scripts/release.sh"
+old = '''    echo
+    echo "DRY-RUN завершено: локальні перевірки зелені; prod не створено — віддалені кроки пропущено."
+    exit 0'''
+new = '''    echo'''
+why = "dry-run без prod D1 падає далі в prod-команди (secret list на неіснуючу БД)"
+match = '--dry-run: попередження git'
+
+[[mutant]]
+id = "M16"
+file = "scripts/release.sh"
+old = '''$LIB git-check "$([ $DRY = 1 ] && echo dry || echo real)"'''
+new = '''$LIB git-check dry'''
+why = "обв'язка bash: справжній реліз викликає перевірку git у режимі dry-run"
+match = 'без --dry-run: СТОП на кроці git'
+
+[[mutant]]
+id = "M17"
+file = "scripts/release.sh"
+old = '''unset BOT_TOKEN WEBHOOK_SECRET'''
+new = ''':'''
+why = "токен preview зі змінних оболонки може піти в prod"
+match = 'секрети зі змінних оболонки'
+
+[[mutant]]
+id = "M18"
+file = "scripts/release.sh"
+old = '''|| fail "реліз лише з чистого main = origin/main"'''
+new = '''|| true'''
+why = "провал перевірки git не зупиняє скрипт"
+match = 'без --dry-run: СТОП на кроці git'
+
+[[mutant]]
+id = "M19"
+file = "wrangler.toml"
+old = '''# Без неї Worker недосяжний і вебхуку нікуди вказати (S3.10 п. 3). Свій домен — після MVP.
+workers_dev = true'''
+new = '''# Без неї Worker недосяжний і вебхуку нікуди вказати (S3.10 п. 3). Свій домен — після MVP.'''
+why = "prod без адреси workers.dev"
+match = 'S3.10 п. 3'
