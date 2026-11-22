@@ -31,6 +31,7 @@ fail() {
   echo "   ✗ $*" >&2
   echo
   echo "СТОП. Зроблено до зупинки:"
+  [ ${#DONE[@]} -eq 0 ] && echo "  - нічого (prod не чіпав)"
   for d in "${DONE[@]}"; do echo "  - $d"; done
   [ -n "${ROLLBACK_FILE:-}" ] && echo "Команди відкату: $ROLLBACK_FILE (docs/RUNBOOK.md, «Відкат»)"
   exit 1
@@ -46,7 +47,7 @@ step "1. Git: чисте дерево й HEAD = origin/main"
 git fetch -q origin main || fail "git fetch origin main"
 GIT_PORCELAIN=$(git status --porcelain) GIT_HEAD=$SHA GIT_ORIGIN_MAIN=$(git rev-parse origin/main) \
   $LIB git-check "$([ $DRY = 1 ] && echo dry || echo real)" || fail "реліз лише з чистого main = origin/main"
-ok "git перевірено"
+if [ $DRY = 1 ]; then ok "git: dry-run — розбіжності вище лише попередження"; else ok "git: чисте дерево, HEAD = origin/main"; fi
 
 step "2. typecheck + test"
 npm run typecheck > "$LOG_DIR/typecheck.log" 2>&1 || { tail -20 "$LOG_DIR/typecheck.log"; fail "typecheck червоний"; }
