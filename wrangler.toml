@@ -1,8 +1,9 @@
 # РДУГ-бот: два повністю окремі оточення (правила 7 і 8 CLAUDE.md).
 # Верхній рівень навмисно без D1 і без cron: `wrangler d1 migrations apply` без `--env`
 # не має куди йти й не потрапить у prod. Тригери між env не успадковуються — оголошені в кожному.
-# Секрети (BOT_TOKEN, WEBHOOK_SECRET, ALLOWED_TG_IDS, MONITOR_PING_URL) тут не живуть: `wrangler secret put … --env …`.
+# Секрети (BOT_TOKEN, WEBHOOK_SECRET, ALLOWED_TG_IDS, MONITOR_PING_URL, ANTHROPIC_API_KEY) тут не живуть: `wrangler secret put … --env …`.
 # GIT_SHA передає деплой: `wrangler deploy --env preview --var GIT_SHA:$(git rev-parse HEAD)`.
+# prod викочує лише `npm run release` з main (scripts/release.sh, docs/RUNBOOK.md).
 name = "adhd-bot"
 main = "src/index.ts"
 compatibility_date = "2026-11-18" # остання дата, яку підтримує workerd 2026-11-18 з wrangler 4.165
@@ -28,6 +29,12 @@ migrations_dir = "migrations"
 
 [env.production]
 name = "adhd-bot-prod"
+# Адреса prod — adhd-bot-prod.<піддомен>.workers.dev (open-questions «Фаза 3», рекомендація; чекає підтвердження Дениса).
+# Без неї Worker недосяжний і вебхуку нікуди вказати (S3.10 п. 3). Свій домен — після MVP.
+workers_dev = true
+# Без зайвих публічних адрес <версія>-adhd-bot-prod.… з prod-біндингами: wrangler 4.165 за замовчуванням вмикає
+# Preview URLs разом із workers.dev (рев'ю 3.3, Д5). Рішення про workers_dev (Q5) це не змінює.
+preview_urls = false
 vars = { ENV = "production" }
 
 [env.production.ai]

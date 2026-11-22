@@ -10,7 +10,8 @@ type Cfg = {
   account_id?: string;
   d1_databases?: unknown;
   triggers?: unknown;
-  env: Record<string, { name?: string; vars?: Record<string, string>; triggers?: { crons?: string[] }; d1_databases?: { binding: string; database_name: string; database_id: string }[] }>;
+  workers_dev?: boolean;
+  env: Record<string, { name?: string; workers_dev?: boolean; preview_urls?: boolean; vars?: Record<string, string>; triggers?: { crons?: string[] }; d1_databases?: { binding: string; database_name: string; database_id: string }[] }>;
 };
 const cfg = parse(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8")) as unknown as Cfg;
 const preview = cfg.env.preview!;
@@ -37,6 +38,16 @@ describe("S0.5 два оточення (wrangler.toml)", () => {
   it("0.5.b: cron «* * * * *» оголошений у кожному оточенні окремо", () => {
     expect(preview.triggers?.crons).toEqual(["* * * * *"]);
     expect(prod.triggers?.crons).toEqual(["* * * * *"]);
+  });
+
+  it("S3.10 п. 3: обидва оточення мають адресу workers.dev (вебхуку є куди вказати), верхній рівень — ні", () => {
+    expect(cfg.workers_dev).toBe(false);
+    expect(preview.workers_dev).toBe(true);
+    expect(prod.workers_dev).toBe(true);
+  });
+
+  it("рев'ю 3.3 Д5: prod без Preview URLs — жодної публічної адреси версії з prod-біндингами", () => {
+    expect(prod.preview_urls).toBe(false);
   });
 
   it("змінна ENV різна в оточеннях і збігається з назвою", () => {

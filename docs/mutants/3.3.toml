@@ -1,0 +1,295 @@
+# Мутанти кроку 3.3 (scripts/release-lib.mjs, scripts/release.sh) — кожен ламає одне рішення «можна далі / стоп».
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/3.3.toml --report docs/mutants/3.3.md
+test = "npx vitest run --project node --reporter=dot test/node/release.test.ts test/node/wrangler-config.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "scripts/release-lib.mjs"
+old = '''return dryRun ? { fatal: [], warn: problems } : { fatal: problems, warn: [] };'''
+new = '''return { fatal: [], warn: problems };'''
+why = "реліз без --dry-run не відмовляє на гілці"
+match = 'без --dry-run: СТОП на кроці git'
+
+[[mutant]]
+id = "M2"
+file = "scripts/release-lib.mjs"
+old = '''else if (head !== originMain)'''
+new = '''else if (false)'''
+why = "HEAD ≠ origin/main не помічається"
+match = 'гілка \(HEAD ≠ origin/main\) без --dry-run'
+
+[[mutant]]
+id = "M3"
+file = "scripts/release-lib.mjs"
+old = '''if (!head || !originMain) problems.push'''
+new = '''if (false) problems.push'''
+why = "не прочитаний origin/main рахується як «збігається»"
+match = 'не прочитали origin/main'
+
+[[mutant]]
+id = "M4"
+file = "scripts/release-lib.mjs"
+old = '''if (id === "" || id === PLACEHOLDER_D1_ID) {'''
+new = '''if (id === "") {'''
+why = "заглушка REPLACE_WITH_PROD_D1_ID рахується створеною БД"
+match = 'заглушка REPLACE_WITH_PROD_D1_ID'
+
+[[mutant]]
+id = "M5"
+file = "scripts/release-lib.mjs"
+old = '''if (typeof b !== "string" || !/^[0-9a-f]{8}(-[0-9a-f]+){3}$/.test(b))'''
+new = '''if (typeof b !== "string")'''
+why = "порожній чи вигаданий bookmark іде в rollback.txt"
+match = 'bookmark: не JSON або не схожий'
+
+[[mutant]]
+id = "M6"
+file = "scripts/release-lib.mjs"
+old = '''if (!/Migrations to be applied/i.test(text)) return null;'''
+new = '''if (false) return null;'''
+why = "помилка API в migrations list читається як «нових міграцій немає»"
+match = 'migrations list: нічого'
+
+[[mutant]]
+id = "M7"
+file = "scripts/release-lib.mjs"
+old = '''return REQUIRED_SECRETS.filter((n) => !names.has(n));'''
+new = '''return [];'''
+why = "реліз без секретів (monitor missing, бот без токена)"
+match = 'секрети: назви НФ-8'
+
+[[mutant]]
+id = "M8"
+file = "scripts/release-lib.mjs"
+old = '''const cronActive = /schedule:\s*\* \* \* \* \*/.test(text);'''
+new = '''const cronActive = true;'''
+why = "деплой без активного cron проходить"
+match = 'deploy без schedule'
+
+[[mutant]]
+id = "M9"
+file = "scripts/release-lib.mjs"
+old = '''new RegExp(`https://${esc}\\.[a-z0-9-]+\\.workers\\.dev`)'''
+new = '''new RegExp(`https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev`)'''
+why = "адреса preview з виводу береться за адресу prod (health не того Worker-а)"
+match = 'адреса preview за prod не рахується'
+
+[[mutant]]
+id = "M10"
+file = "scripts/release-lib.mjs"
+old = '''if (body.sha !== sha) problems.push'''
+new = '''if (false) problems.push'''
+why = "/health зі старим sha (деплой не доїхав) — зелений"
+match = 'старий sha'
+
+[[mutant]]
+id = "M11"
+file = "scripts/release-lib.mjs"
+old = '''if (body.cron?.stale !== false) problems.push'''
+new = '''if (body.cron?.stale === true) problems.push'''
+why = "cron, що ще не бився (stale відсутній), — зелений"
+match = 'cron stale або ще не бився'
+
+[[mutant]]
+id = "M12"
+file = "scripts/release-lib.mjs"
+old = '''if (body.monitor === "missing") problems.push'''
+new = '''if (false) problems.push'''
+why = "monitor: missing не названо причиною"
+match = 'monitor missing'
+
+[[mutant]]
+id = "M13"
+file = "scripts/release-lib.mjs"
+old = '''if (body.env !== env) problems.push'''
+new = '''if (false) problems.push'''
+why = "відповідь preview зараховано як prod"
+match = 'відповів preview, а не prod'
+
+[[mutant]]
+id = "M14"
+file = "scripts/release.sh"
+old = '''  echo "DRY-RUN завершено: перевірки пройдено, нічого не застосовано й не задеплоєно."
+  exit 0'''
+new = '''  echo "DRY-RUN завершено: перевірки пройдено, нічого не застосовано й не задеплоєно."'''
+why = "dry-run з prod D1 іде далі в apply і deploy"
+match = 'обидва виходи dry-run'
+
+[[mutant]]
+id = "M15"
+file = "scripts/release.sh"
+old = '''    echo
+    echo "DRY-RUN завершено: локальні перевірки зелені; prod не створено — віддалені кроки пропущено."
+    exit 0'''
+new = '''    echo'''
+why = "dry-run без prod D1 падає далі в prod-команди (secret list на неіснуючу БД)"
+match = '--dry-run: попередження git'
+
+[[mutant]]
+id = "M16"
+file = "scripts/release.sh"
+old = '''$LIB git-check "$([ $DRY = 1 ] && echo dry || echo real)"'''
+new = '''$LIB git-check dry'''
+why = "обв'язка bash: справжній реліз викликає перевірку git у режимі dry-run"
+match = 'без --dry-run: СТОП на кроці git'
+
+[[mutant]]
+id = "M17"
+file = "scripts/release.sh"
+old = '''unset BOT_TOKEN WEBHOOK_SECRET API_ROOT'''
+new = ''':'''
+why = "токен preview зі змінних оболонки може піти в prod"
+match = 'секрети зі змінних оболонки'
+
+[[mutant]]
+id = "M18"
+file = "scripts/release.sh"
+old = '''|| fail "реліз лише з чистого main = origin/main"'''
+new = '''|| true'''
+why = "провал перевірки git не зупиняє скрипт"
+match = 'без --dry-run: СТОП на кроці git'
+
+[[mutant]]
+id = "M19"
+file = "wrangler.toml"
+old = '''# Без неї Worker недосяжний і вебхуку нікуди вказати (S3.10 п. 3). Свій домен — після MVP.
+workers_dev = true'''
+new = '''# Без неї Worker недосяжний і вебхуку нікуди вказати (S3.10 п. 3). Свій домен — після MVP.'''
+why = "prod без адреси workers.dev"
+match = 'S3.10 п. 3'
+
+# ── Рев'ю 3.3: R1–R4 — мутанти рев'юера на справжньому шляху (вижили на 17d1e5a, В4); F1–F11 — на кожне виправлення.
+
+[[mutant]]
+id = "R1"
+file = "scripts/release.sh"
+old = '''  [ -z "$LEFT" ] || fail "після apply лишились: $LEFT"'''
+new = '''  true'''
+why = "після apply лишились незастосовані міграції — деплой іде далі"
+match = 'R1: після apply'
+
+[[mutant]]
+id = "R2"
+file = "scripts/release.sh"
+old = '''[ -z "$PROBLEMS" ] || fail "/health prod: $PROBLEMS"'''
+new = '''true'''
+why = "/health prod червоний після 4 спроб — реліз пише «ok»"
+match = 'R2: /health prod stale'
+
+[[mutant]]
+id = "R3"
+file = "scripts/release.sh"
+old = '''BOOKMARK=$($LIB bookmark < "$LOG_DIR/bookmark.log") || fail "не розібрав bookmark"'''
+new = '''BOOKMARK=$($LIB bookmark < "$LOG_DIR/bookmark.log") || true'''
+why = "bookmark не розібрано — міграції застосовуються без точки відкату БД"
+match = 'R3: bookmark не розібрано'
+
+[[mutant]]
+id = "R4"
+file = "scripts/release.sh"
+old = '''  [ "$ans" = "так" ] || [ "$ans" = "yes" ] || fail "людина не підтвердила"'''
+new = '''  true'''
+why = "будь-яка відповідь (навіть «ні») = згода на міграції й деплой"
+match = 'R4: відповідь «ні»'
+
+[[mutant]]
+id = "F1"
+file = "scripts/release.sh"
+old = '''  stop_or_warn "не визначив версію prod на 100 % (deployments status, журнал $LOG_DIR/deployments.log) — без цілі відкату коду не викочую"'''
+new = '''  :'''
+why = "В1: збій deployments status без --first — реліз іде з rollback.txt без цілі"
+match = 'В1: збій deployments status'
+
+[[mutant]]
+id = "F2"
+file = "scripts/release.sh"
+old = '''stop_or_warn() { if [ $DRY = 1 ]; then echo "   ⚠ $*"; else fail "$*"; fi; }'''
+new = '''stop_or_warn() { echo "   ⚠ $*"; }'''
+why = "В1/Д2: справжній реліз лише попереджає замість стопу"
+match = 'В1: збій deployments status'
+
+[[mutant]]
+id = "F3"
+file = "scripts/release-lib.mjs"
+old = '''if (rows.length === 0 || rows.some((r) => !MIGRATION_NAME.test(r))) return null;'''
+new = '''if (rows.length === 0) return null;'''
+why = "В2: не впізнане ім'я міграції пропускається — apply/журнал без неї"
+match = 'В2: заголовок є'
+
+[[mutant]]
+id = "F4"
+file = "scripts/release-lib.mjs"
+old = '''if (rows.length === 0 || rows.some'''
+new = '''if (rows.some'''
+why = "В2: заголовок є, рядків таблиці 0 (формат змінився) → «нових немає»"
+match = 'В2: заголовок є'
+
+[[mutant]]
+id = "F5"
+file = "scripts/release.sh"
+old = '''[ -n "$PREVIEW_VERSION" ] && [ "$PREVIEW_VERSION" = "$PREVIEW_AFTER" ] ||'''
+new = '''[ -n "$PREVIEW_VERSION" ] && [ "$PREVIEW_AFTER" = "$PREVIEW_AFTER" ] ||'''
+why = "В3: «після» порівнюється саме з собою — перевірка preview не червоніє"
+match = 'В3: деплой зачепив preview'
+
+[[mutant]]
+id = "F6"
+file = "scripts/release.sh"
+old = '''if $WR deployments status --env preview --json > "$LOG_DIR/preview-after.log" 2>&1; then
+  PREVIEW_AFTER=$($LIB deployed-version < "$LOG_DIR/preview-after.log")
+fi'''
+new = '''PREVIEW_AFTER=$PREVIEW_VERSION'''
+why = "В3: «після» не читається з preview — береться знімок «до»"
+match = 'В3: деплой зачепив preview'
+
+[[mutant]]
+id = "F7"
+file = "scripts/release.sh"
+old = '''DONE+=("запущено wrangler deploy — нова версія може бути вже живою (відкат — rollback.txt)")'''
+new = ''':'''
+why = "Д1: стоп після деплою мовчить, що код уже живий"
+match = 'Д1: деплой пройшов'
+
+[[mutant]]
+id = "F8"
+file = "scripts/release.sh"
+old = '''[ $FIRST = 1 ] || [ "$RELEASES" != 0 ] || stop_or_warn'''
+new = '''true || stop_or_warn'''
+why = "Д2: перша викатка без --first — відкат на Worker-заглушку"
+match = 'Д2: журнал порожній'
+
+[[mutant]]
+id = "F9"
+file = "scripts/release-lib.mjs"
+old = '''const v = (json.versions ?? []).find((x) => x.percentage === 100);'''
+new = '''const v = (json.versions ?? []).find((x) => x.percentage === 100) ?? json.versions?.[0];'''
+why = "Д3: при поступовій викатці ціллю відкату стає перша зі списку (може бути нова)"
+match = 'Д3: поступова викатка'
+
+[[mutant]]
+id = "F10"
+file = "scripts/release.sh"
+old = '''unset BOT_TOKEN WEBHOOK_SECRET API_ROOT'''
+new = '''unset BOT_TOKEN WEBHOOK_SECRET'''
+why = "Д4: API_ROOT з оболонки доходить до set-commands — токен prod на чужий хост"
+match = '«так»: усі 10 кроків'
+
+[[mutant]]
+id = "F11"
+file = "wrangler.toml"
+old = '''preview_urls = false
+'''
+new = ''''''
+why = "Д5: prod знову з Preview URLs — публічні адреси версій із prod-біндингами"
+match = 'Д5: prod без Preview URLs'
+
+[[mutant]]
+id = "F12"
+file = "scripts/release.sh"
+old = '''    if [ $FIRST = 1 ]; then
+      echo "# перша викатка'''
+new = '''    if false; then
+      echo "# перша викатка'''
+why = "--first: rollback.txt пише wrangler rollback на заглушку замість deleteWebhook"
+match = '--first на порожньому журналі'
