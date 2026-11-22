@@ -95,7 +95,9 @@ describe("3.3 реліз: ворота git", () => {
     expect(r.warn).toHaveLength(2);
   });
   it("не прочитали origin/main — СТОП, а не «збігається»", () => {
-    expect(checkGit({ porcelain: "", head: main, originMain: "", dryRun: false }).fatal).toHaveLength(1);
+    expect(checkGit({ porcelain: "", head: main, originMain: "", dryRun: false }).fatal).toEqual(["не вдалося прочитати HEAD або origin/main"]);
+    // git не відповів зовсім: "" === "" не має стати «HEAD = origin/main» (мутант M3)
+    expect(checkGit({ porcelain: "", head: "", originMain: "", dryRun: false }).fatal).toEqual(["не вдалося прочитати HEAD або origin/main"]);
   });
   it("CLI git-check real на гілці: exit 1 і «СТОП» у stderr (так відмовляє release.sh)", () => {
     const r = spawnSync(process.execPath, ["scripts/release-lib.mjs", "git-check", "real"], {
