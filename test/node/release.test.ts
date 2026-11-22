@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -235,5 +236,62 @@ describe("3.3 release.sh: порядок кроків і межі dry-run", () =
     const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
     expect(pkg.scripts.release).toBe("bash scripts/release.sh");
     execFileSync("bash", ["-n", "scripts/release.sh"], { cwd: ROOT });
+  });
+});
+
+// Обв'язка bash, а не лише чисті функції: release.sh з підмінними git/npm/npx у PATH (без мережі, без prod).
+// git каже «гілка»: HEAD bbbb… ≠ origin/main aaaa…; npx віддає канонічний вивід wrangler і пише свої виклики в журнал.
+describe("3.3 release.sh на гілці (підмінні git/npm/npx)", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "release-sh-"));
+  const shim = (name: string, body: string) => writeFileSync(path.join(dir, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  const log = (name: string) => path.join(dir, `${name}.calls`).split(path.sep).join("/");
+  shim("git", `case "$*" in
+  "rev-parse HEAD") echo ${"b".repeat(40)} ;;
+  "rev-parse origin/main") echo ${"a".repeat(40)} ;;
+  *) : ;;
+esac`);
+  shim("npm", `echo "$*" >> "${log("npm")}"; echo "      Tests  1 passed (1)"`);
+  shim("npx", `echo "$*" >> "${log("npx")}"
+case "$*" in
+  *"secret list"*) printf '%s' '${JSON.stringify(REQUIRED_SECRETS.map((name) => ({ name, type: "secret_text" })))}' ;;
+  *"time-travel info"*) echo '{"bookmark": "${BOOKMARK}"}' ;;
+  *"migrations list"*) echo "No migrations to apply!" ;;
+  *) echo "{}" ;;
+esac`);
+  const run = (args: string[]) =>
+    spawnSync("bash", ["scripts/release.sh", ...args], {
+      cwd: ROOT,
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}`, RELEASE_LOG_DIR: path.join(dir, "logs") },
+    });
+  const calls = (name: string) => (existsSync(log(name)) ? readFileSync(log(name), "utf8") : "");
+
+  it("без --dry-run: СТОП на кроці git, до тестів і до будь-якої команди wrangler", { timeout: 60_000 }, () => {
+    const r = run([]);
+    expect(r.status, r.stdout + r.stderr).toBe(1);
+    expect(r.stderr).toContain("СТОП: HEAD bbbbbbb ≠ origin/main aaaaaaa");
+    expect(r.stdout).toContain("нічого (prod не чіпав)");
+    expect(calls("npm")).toBe("");
+    expect(calls("npx")).toBe("");
+  });
+
+  it("--dry-run: попередження git, тести прогнано, жодного apply/deploy/Telegram", { timeout: 60_000 }, () => {
+    const r = run(["--dry-run"]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain("ПОПЕРЕДЖЕННЯ (dry-run): HEAD bbbbbbb ≠ origin/main aaaaaaa");
+    expect(r.stdout).toContain("DRY-RUN завершено");
+    expect(calls("npm")).toContain("test");
+    const npx = calls("npx");
+    // prod D1 ще не створено → жодної prod-команди; створено → лише читання (secret list, status, info, list)
+    if (prodD1State(readFileSync(path.join(ROOT, "wrangler.toml"), "utf8")).created) {
+      expect(npx).toContain("time-travel info");
+      expect(r.stdout).toContain(BOOKMARK);
+    } else {
+      expect(npx).toBe("");
+      expect(r.stdout).toContain("prod D1 «adhd-prod» ще не створено");
+    }
+    expect(npx).not.toMatch(/migrations apply|deploy --env|rollback|secret put|restore/);
+    expect(r.stdout).not.toContain("BOT_TOKEN prod-бота");
   });
 });
