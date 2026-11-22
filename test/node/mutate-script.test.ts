@@ -80,3 +80,44 @@ describe("S0.8.b scripts/mutate.py і брудне дерево", () => {
     expect(target(dir)).toBe("value = GOOD\n");
   });
 });
+
+// R-3 Д3: `match` шукається лише в рядках падіння. Шум stderr ПРОЙДЕНОГО тесту з тією самою назвою не робить
+// мутанта «вбитим» — інакше хибний KILLED (мутант R2 «вбив» 3.1.d, хоча впав 3.8.c).
+describe("R-3 Д3 scripts/mutate.py: match — лише в рядках падіння", () => {
+  function noisy(failName: string): string {
+    const dir = project({ repo: false });
+    writeFileSync(
+      path.join(dir, "check.mjs"),
+      [
+        "import { readFileSync } from 'node:fs';",
+        "console.log('stderr | test/a.test.ts > 3.1.d: ланцюг доплановує');", // пройдений тест теж друкує свою назву
+        "console.log(' ✓ 3.1.d: ланцюг доплановує 12ms');",
+        "if (readFileSync('target.txt', 'utf8').includes('MUTANT')) {",
+        `  console.log(' FAIL  |workers| test/a.test.ts > ${failName}');`,
+        `  console.log('   × ${failName} 9ms');`,
+        "  process.exit(1);",
+        "}",
+      ].join("\n"),
+    );
+    writeFileSync(
+      path.join(dir, "mutants.toml"),
+      'test = "node check.mjs"\n[[mutant]]\nid = "M1"\nfile = "target.txt"\nold = "GOOD"\nnew = "MUTANT"\nwhy = "test"\nmatch = \'3\\.1\\.d\'\n', // TOML literal: regex без подвійного екранування
+    );
+    git(dir, "init", "-q");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "init");
+    return dir;
+  }
+
+  it("впав інший тест (3.8.c), назва 3.1.d — лише в шумі пройденого → WRONG-KILL, вихід 1", () => {
+    const r = run(noisy("3.8.c: зміна поясу"));
+    expect(r.status, r.stdout + r.stderr).toBe(1);
+    expect(r.stdout).toContain("M1: WRONG-KILL");
+  });
+
+  it("впав саме 3.1.d → KILLED, вихід 0", () => {
+    const r = run(noisy("3.1.d (з історією)"));
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain("M1: KILLED");
+  });
+});

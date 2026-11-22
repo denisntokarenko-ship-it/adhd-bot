@@ -157,13 +157,15 @@ export interface DigestSent {
 
 // Закриття ПІСЛЯ відправки й наступний огляд — один batch (S3.1.c). Рядок вже закритий іншим прогоном (дубль) →
 // `false`, але наступний уже є (ON CONFLICT), а скасування `due` усе одно виконується: повідомлення пішло.
+// Рядок, який `/settings` скасував, поки повідомлення було в дорозі (`cancelled` без `sent_at`), теж стає `sent`
+// (рев'ю R-3 В1): інакше `lastSentFireAt` його не бачить, і межа доби пропускає другий огляд тієї ж доби.
 export async function closeDigestSent(userId: number, db: Db, r: Reminder, f: DigestSent, nextFireAt: number, now: number): Promise<boolean> {
   const d1 = d1Of(db);
   const stmts: D1PreparedStatement[] = [
     d1
       .prepare(
         `UPDATE reminders SET status = 'sent', sent_at = ?3, sent_as = 'single', tg_message_id = ?4, variant_idx = ?5, lease_until = NULL
-         WHERE id = ?1 AND user_id = ?2 AND status = 'pending'`,
+         WHERE id = ?1 AND user_id = ?2 AND (status = 'pending' OR (status = 'cancelled' AND sent_at IS NULL))`,
       )
       .bind(r.id, userId, f.sentAt, f.tgMessageId, f.variantIdx),
     insertStatement(userId, db, r.kind as DigestKind, nextFireAt, now),

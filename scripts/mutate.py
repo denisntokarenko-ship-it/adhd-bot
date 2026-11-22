@@ -16,8 +16,9 @@
   якщо процес убили посеред мутанта — наступний запуск відмовить, `--recover` поверне файл;
 - PYTHONDONTWRITEBYTECODE=1 і видалення .pyc мутованого файлу перед кожним прогоном:
   старий .pyc того ж розміру й mtime виконується замість мутанта;
-- `match` (regex): мутант рахується вбитим, лише якщо цей текст є у виводі тестів —
-  SyntaxError чи ImportError «вбиває» будь-який тест, але нічого не доводить;
+- `match` (regex): мутант рахується вбитим, лише якщо цей текст є в РЯДКАХ ПАДІННЯ виводу
+  (`FAIL`/`FAILED`/`×`/`✖` на початку рядка) — SyntaxError чи ImportError «вбиває» будь-який тест,
+  але нічого не доводить, а назва пройденого тесту в його stderr — не падіння (рев'ю R-3 Д3);
 - TIMEOUT вбитим не рахується: це питання до людини, а не доказ.
 
 Коди виходу: 0 — усе як в `expect`; 1 — є розбіжності; 2 — помилка налаштування.
@@ -202,12 +203,22 @@ def recover(root):
     return 0
 
 
+# Рядки падіння: vitest ` FAIL  … > назва` і `  × назва`, pytest `FAILED …`, node --test `✖`. Решта виводу
+# (stderr | … > назва ПРОЙДЕНОГО тесту, ✓ …) у збіг `match` не йде — інакше хибний KILLED (рев'ю R-3 Д3).
+FAIL_LINE = re.compile(r"^\s*(FAIL(ED)?\b|[×✗✖]\s)")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def failure_lines(text):
+    return "\n".join(l for l in ANSI.sub("", text).splitlines() if FAIL_LINE.search(l))
+
+
 def classify(code, text, match):
     if code is None:
         return "TIMEOUT"
     if code == 0:
         return "SURVIVED"
-    if match and not re.search(match, text):
+    if match and not re.search(match, failure_lines(text)):
         return "WRONG-KILL"
     return "KILLED"
 
