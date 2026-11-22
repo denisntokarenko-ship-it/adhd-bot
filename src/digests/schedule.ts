@@ -53,16 +53,19 @@ export function localDayDiff(tz: string, from: number, to: number): number {
 // (а) строго пізніша за `now` і (б) не раніша за межу — кінець локальної доби останнього `sent` того ж виду
 // (для тижня — ще 6 локальних дат пізніше). Межа — в ПОТОЧНОМУ `tz` (рев'ю 3.0 В1): зміна години чи поясу
 // не дає другого огляду тієї ж доби. `lastSentFireAt` — `fire_at` останнього `sent` рядка цього виду; нема — межі нема.
+// Межа доби: найраніша мить наступного огляду цього виду після `sent` з `fire_at = lastSentFireAt` (у поточному `tz`).
+// Немає `sent` — межі немає. Нею ж відправка відсіює зайвий огляд тієї ж доби / тижня (рев'ю R-3 В1).
+export function digestLimit(kind: DigestKind, u: DigestSettings, lastSentFireAt: number | null): number {
+  if (lastSentFireAt === null) return Number.NEGATIVE_INFINITY;
+  const end = dayBounds(u.tz, lastSentFireAt)[1]; // початок наступної локальної доби
+  if (kind !== "digest_weekly") return end;
+  const next = dateMs(localIso(end, u.tz).slice(0, 10)) + 6 * DAY_MS; // зсув дати, не 6×24 год
+  return localToUtc(dateKey(next), u.tz) ?? end + 6 * DAY_MS;
+}
+
 export function nextDigestAt(kind: DigestKind, u: DigestSettings, now: number, lastSentFireAt: number | null): number {
   const minute = kind === "digest_evening" ? u.evening_at : u.morning_at;
-  let limit = Number.NEGATIVE_INFINITY;
-  if (lastSentFireAt !== null) {
-    const end = dayBounds(u.tz, lastSentFireAt)[1]; // початок наступної локальної доби
-    if (kind === "digest_weekly") {
-      const next = dateMs(localIso(end, u.tz).slice(0, 10)) + 6 * DAY_MS; // зсув дати, не 6×24 год
-      limit = localToUtc(dateKey(next), u.tz) ?? end + 6 * DAY_MS;
-    } else limit = end;
-  }
+  const limit = digestLimit(kind, u, lastSentFireAt);
   let day = dateMs(localIso(Math.max(now, Number.isFinite(limit) ? limit : now), u.tz).slice(0, 10));
   for (let i = 0; i < 16; i++, day += DAY_MS) {
     if (kind === "digest_weekly" && isoDow(day) !== u.weekly_dow) continue;

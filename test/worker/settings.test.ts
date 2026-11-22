@@ -9,7 +9,7 @@ import { ensureUser } from "../../src/db/users";
 import { planDigests } from "../../src/digests/planner";
 import { runScheduled } from "../../src/scheduled";
 import { EVENING_CHOICES, MORNING_CHOICES, TZ_CHOICES, digestPromise } from "../../src/settings/choices";
-import { SOON_POOL, ST_TZ_HINT, ST_TZ_SAME, ST_TZ_UNKNOWN } from "../../src/texts";
+import { DIGEST_MORNING_POOL, DIGEST_WEEKLY_POOL, SOON_POOL, ST_TZ_HINT, ST_TZ_SAME, ST_TZ_UNKNOWN } from "../../src/texts";
 import { baseEnv, deps, mockTelegram, send, textUpdate, type TgCall } from "./helpers";
 
 const DB = env.DB!;
@@ -585,6 +585,59 @@ describe("3.8.f ⏰ переживає зміну поясу", () => {
     const all = await rows(`item_id = ${item} AND kind = 'due'`);
     expect(all).toHaveLength(1);
     expect(all[0]!.status).toBe("pending");
+  });
+});
+
+// ── В1 рев'ю R-3: /settings у мить відправки огляду (оренда активна) ──────────────────────────────────────
+
+describe("В1 R-3: зміна налаштування, поки огляд у дорозі, не дає другого огляду тієї ж доби / тижня", () => {
+  // Людина тапає налаштування рівно під час `sendMessage` огляду: `applySetting` бачить рядок ще `pending`.
+  async function race(kind: string, onNth: number, change: Parameters<typeof applySetting>[2], day: string, sendAt: string) {
+    let uid = 0;
+    const tg = mockTelegram({
+      seqIds: true,
+      onSend: async (n) => {
+        if (n === onNth) await applySetting(uid, db(), change, Date.now());
+      },
+    });
+    vi.setSystemTime(at(`${day}T00:00:00Z`) - 10 * DAY);
+    uid = await user();
+    await mk(uid, { title: "давня справа" }); // зміст для ранку й тижня (зависла > 7 діб)
+    await tickAt(`${day}T06:55:00Z`); // доплановування
+    await tickAt(sendAt); // відправка, посеред неї — зміна
+    const sentRow = (await rows(`kind = '${kind}' AND fire_at = ${at(sendAt)}`))[0]!;
+    // Наступний pending цього виду — до нього доходимо одним тиком (раніше там був другий огляд)
+    const next = (await pending(kind, uid))[0]!;
+    vi.setSystemTime(next.fire_at + MIN);
+    await cron();
+    const nextAfter = await pending(kind, uid);
+    return { tg, sentRow: sentRow as Row & { sent_at: number | null; tg_message_id: number | null }, nextAfter };
+  }
+
+  const heads = (tg: ReturnType<typeof mockTelegram>, pool: readonly string[]) =>
+    tg.sent().filter((c) => pool.some((h) => textOf(c).startsWith(h))).length;
+
+  it("ранок 09:00 → 10:00 під час ранку 23.11: рівно 1 ранок за добу, рядок 09:00 — sent із sent_at і tg_message_id, наступний — 24.11 10:00", async () => {
+    const r = await race("digest_morning", 1, { field: "morning_at", value: 600 }, "2026-11-23", "2026-11-23T07:00:00Z");
+    expect(heads(r.tg, DIGEST_MORNING_POOL)).toBe(1);
+    expect(r.sentRow.status).toBe("sent");
+    expect(r.sentRow.sent_at).not.toBeNull();
+    expect(r.sentRow.tg_message_id).not.toBeNull();
+    expect(r.nextAfter.map((x) => iso(x.fire_at))).toEqual(["2026-11-24T08:00:00Z"]);
+  });
+
+  it("/tz Lisbon під час ранку 09:00 Київ: рівно 1 ранок за добу, наступний — 24.11 09:00 Лісабон", async () => {
+    const r = await race("digest_morning", 1, { field: "tz", value: "Europe/Lisbon" }, "2026-11-23", "2026-11-23T07:00:00Z");
+    expect(heads(r.tg, DIGEST_MORNING_POOL)).toBe(1);
+    expect(r.sentRow.status).toBe("sent");
+    expect(r.nextAfter.map((x) => iso(x.fire_at))).toEqual(["2026-11-24T09:00:00Z"]);
+  });
+
+  it("день тижня нд → пн під час тижневого огляду нд 29.11: рівно 1 тижневий, наступний — пн 07.12 (не завтра)", async () => {
+    const r = await race("digest_weekly", 2, { field: "weekly_dow", value: 1 }, "2026-11-29", "2026-11-29T07:00:00Z");
+    expect(heads(r.tg, DIGEST_WEEKLY_POOL)).toBe(1);
+    expect(r.sentRow.status).toBe("sent");
+    expect(r.nextAfter.map((x) => iso(x.fire_at))).toEqual(["2026-12-07T07:00:00Z"]);
   });
 });
 

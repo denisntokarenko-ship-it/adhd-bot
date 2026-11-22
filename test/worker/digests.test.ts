@@ -229,6 +229,20 @@ describe("S3.1 планування, ланцюг, самовідновленн�
     expect(iso(m[0]!.fire_at)).toBe("2026-11-21T07:00:00Z");
   });
 
+  it("3.1.d (з історією, R-3 Д2): є sent і cancelled ранки, pending видалено → тик доплановує рівно один pending на 21.11 09:00", async () => {
+    mockTelegram();
+    const u = await user();
+    vi.setSystemTime(at("2026-11-20T08:15:00Z"));
+    await cron();
+    await DB.prepare("DELETE FROM reminders WHERE kind = 'digest_morning'").run();
+    // історія того ж виду: учорашній скасований (порожній ранок) і сьогоднішній відправлений
+    await rem(u, 0, { item_id: null, kind: "digest_morning", fire_at: at("2026-11-19T07:00:00Z"), status: "cancelled" });
+    await rem(u, 0, { item_id: null, kind: "digest_morning", fire_at: at("2026-11-20T07:00:00Z"), status: "sent", sent_at: at("2026-11-20T07:00:05Z") });
+    await cron();
+    const p = await dgs("digest_morning", "pending");
+    expect(p.map((r) => iso(r.fire_at))).toEqual(["2026-11-21T07:00:00Z"]);
+  });
+
   it("3.1.e: тиха ніч 23–08, morning_at 07:00 → 07:00–07:59 мовчить і оренди немає; о 08:00 — один ранок окремо від зведення запізнілих", async () => {
     const tg = mockTelegram();
     const u = await user();
@@ -381,6 +395,8 @@ describe("S3.2 ранок: події сьогодні + до 3 справ", () 
     expect(t).toContain("14:00 CCC"); // сьогоднішній час — HH:MM
     expect(t).not.toMatch(/EEE|AAA/);
     expect(t).not.toMatch(/вчора|прострочен/i); // давніша дата не показується
+    expect(t).not.toContain("12:00 DDD"); // учорашня справа з часом — без години (R-3 Д1: інакше читається як сьогоднішня)
+    expect(t).toContain("• DDD");
     expect(kbOf(sentCalls(tg).find(morning)!)).toHaveLength(1); // 4 кандидати → «показати все»
     await press("dg:all");
     const all = textOf(edits(tg)[0]!);

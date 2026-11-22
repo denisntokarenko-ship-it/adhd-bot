@@ -23,7 +23,7 @@ import { RUN_BUDGET_MS } from "../reminders/plan";
 import { classify, errorClass } from "../reminders/send-failure";
 import { dayBounds } from "../time";
 import { eveningMessage, morningMessage, weeklyMessage } from "./render";
-import { DIGEST_ORDER, DIGEST_TTL_MS, STUCK_DAYS, WARM_EVERY_DAYS, WEEKLY_ITEMS, localDayDiff, nextDigestAt, type DigestKind } from "./schedule";
+import { DIGEST_ORDER, DIGEST_TTL_MS, STUCK_DAYS, WARM_EVERY_DAYS, WEEKLY_ITEMS, digestLimit, localDayDiff, nextDigestAt, type DigestKind } from "./schedule";
 
 export interface DigestCtx {
   api: Api;
@@ -94,6 +94,10 @@ export async function dispatchDigests(c: DigestCtx, userId: number, digests: Rem
       await cancelDigest(userId, c.db, r, nextDigestAt(kind, u, now, lastSent), now);
       c.unsent.delete(r.id);
     };
+    if (r.fire_at < digestLimit(kind, u, lastSent)) {
+      await skip(); // огляд цієї доби / тижня вже пішов (зміна налаштувань у мить відправки, R-3 В1) — переносимо
+      continue;
+    }
     if (now - r.fire_at > DIGEST_TTL_MS) {
       await skip(); // пауза, тиша чи збій cron: запізнілий огляд уже не потрібен
       continue;
