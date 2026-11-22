@@ -130,6 +130,8 @@ describe("3.3 реліз: розбір виводу wrangler", () => {
       "0005_digests.sql",
     ]);
     expect(parsePendingMigrations("✘ [ERROR] A request to the Cloudflare API failed")).toBeNull();
+    // таблиця імен без заголовка — невідомий формат, не «список до застосування» (мутант M6 після В2)
+    expect(parsePendingMigrations(ML_FIVE.replace("Migrations to be applied:", ""))).toBeNull();
   });
   it("рев'ю 3.3 В2: заголовок є, а ім'я не впізнано (чи рядків нема) — null (стоп), а не «нових немає»", () => {
     expect(parsePendingMigrations("Migrations to be applied:\n│ 0006_digests.v2.sql │\n")).toBeNull();
