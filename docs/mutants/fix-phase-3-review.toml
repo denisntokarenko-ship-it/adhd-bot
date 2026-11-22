@@ -1,0 +1,53 @@
+# Мутанти fix/phase-3-review: R2, R3 (рев'ю R-3: R2 «вбито» не тим тестом, R3 вижив) + нові на виправленнях В1, Д3.
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/fix-phase-3-review.toml --report docs/mutants/fix-phase-3-review.md
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "R2"
+file = "src/db/system.ts"
+old = '''WHERE NOT EXISTS (SELECT 1 FROM reminders r WHERE r.user_id = u.id AND r.kind = k.kind AND r.status = 'pending')'''
+new = '''WHERE NOT EXISTS (SELECT 1 FROM reminders r WHERE r.user_id = u.id AND r.kind = k.kind)'''
+why = "Д2: будь-який старий рядок виду блокує доплановування -> має червоніти саме 3.1.d (з історією)"
+match = '3\.1\.d \(з історією'
+
+[[mutant]]
+id = "R3"
+file = "src/digests/render.ts"
+old = '''it.all_day === 0 && it.due_at !== null && it.due_at >= dayStart && it.due_at < dayEnd'''
+new = '''it.all_day === 0 && it.due_at !== null && it.due_at < dayEnd'''
+why = "Д1: учорашня справа з часом показує «12:00 DDD», ніби сьогодні -> має червоніти 3.2.b"
+match = '3\.2\.b'
+
+[[mutant]]
+id = "B1a"
+file = "src/digests/dispatch.ts"
+old = '''    if (r.fire_at < digestLimit(kind, u, lastSent)) {'''
+new = '''    if (false) {'''
+why = "В1: без запобіжника межі доби зайвий pending тієї ж доби відправляється -> другий огляд"
+match = 'В1 R-3'
+
+[[mutant]]
+id = "B1b"
+file = "src/db/digests.ts"
+old = '''WHERE id = ?1 AND user_id = ?2 AND (status = 'pending' OR (status = 'cancelled' AND sent_at IS NULL))'''
+new = '''WHERE id = ?1 AND user_id = ?2 AND status = 'pending\''''
+why = "В1: відправлений, але скасований /settings рядок лишається cancelled -> lastSentFireAt не бачить -> другий огляд"
+match = 'В1 R-3'
+
+[[mutant]]
+id = "B1c"
+file = "src/digests/schedule.ts"
+old = '''  if (kind !== "digest_weekly") return end;'''
+new = '''  return end;'''
+why = "В1/тиждень: межа тижня = лише кінець доби -> тижневий огляд наступного дня після зміни дня тижня"
+match = 'В1 R-3|3\.7|3\.8|S3\.7|S3\.1'
+
+[[mutant]]
+id = "D3"
+file = "scripts/mutate.py"
+old = '''    if match and not re.search(match, failure_lines(text)):'''
+new = '''    if match and not re.search(match, text):'''
+why = "Д3: match по всьому виводу (зі stderr пройдених тестів) -> хибний KILLED"
+match = 'R-3 Д3'
+test = "npx vitest run --reporter=dot test/node/mutate-script.test.ts"
