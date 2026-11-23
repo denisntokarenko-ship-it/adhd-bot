@@ -482,7 +482,7 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
     });
   });
 
-  it("4.5.h: тиха ніч рутин не стосується; пауза — так: після паузи в межах 3 год іде, пізніше — cancelled без routine_logs", async () => {
+  it("4.5.h: тиха ніч рутин не стосується; пауза тримає звичку: після паузи в межах 3 год іде, пізніше — cancelled без routine_logs", async () => {
     const tg = mockTelegram({ seqIds: true });
     const u = await user();
     await DB.prepare("UPDATE users SET quiet_from = 1380, quiet_to = 480 WHERE id = ?").bind(u).run();
@@ -493,7 +493,7 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
 
     await DB.prepare("DELETE FROM reminders").run();
     await DB.prepare("DELETE FROM routines").run();
-    await med(u, { times: ["08:00"] });
+    await med(u, { times: ["08:00"], kind: "habit" }); // В4: паузу тримають лише звички
     await DB.prepare("UPDATE users SET pause_until = ? WHERE id = ?").bind(S8 + 60 * MIN, u).run();
     await tick(S8);
     expect(pushes(tg)).toHaveLength(1); // пауза: чекає
@@ -507,6 +507,27 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
     expect(pushes(tg)).toHaveLength(2);
     expect((await remRows()).map((r) => r.status)).toContain("cancelled");
     expect(await logs()).toEqual([]);
+  });
+
+  it("В4 (R-4, рішення Дениса): ліки ігнорують /pause — корінь і 3 повтори вчасно; звичка того ж слота чекає кінця паузи", async () => {
+    const tg = mockTelegram({ seqIds: true });
+    const u = await user();
+    await med(u, { times: ["08:00"] });
+    await seedRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["08:00"], daysMask: 127 }, T0);
+    await DB.prepare("UPDATE users SET pause_until = ? WHERE id = ?").bind(S8 + 2 * 60 * MIN, u).run();
+    for (const t of [S8, S8 + 5 * MIN, S8 + 20 * MIN, S8 + 50 * MIN]) await tick(t);
+    const titled = (t: string) => pushes(tg).filter((c) => textOf(c).includes(t));
+    expect(titled("Вітамін D")).toHaveLength(4);
+    expect(titled("Прогулянка")).toHaveLength(0);
+    const medRows = (await remRows()).filter((r) => r.max_attempts === 4 && r.slot_at === S8);
+    expect(medRows.map((r) => [r.attempt, r.status, (r.sent_at! - S8) / MIN])).toEqual([
+      [1, "sent", 0],
+      [2, "sent", 5],
+      [3, "sent", 20],
+      [4, "sent", 50],
+    ]);
+    await tick(S8 + 2 * 60 * MIN); // пауза скінчилась — звичка йде (у межах ROUTINE_TTL_MS)
+    expect(titled("Прогулянка")).toHaveLength(1);
   });
 
   it("4.5.k: 403 на корені 08:00, тики 08:01…08:05 → 1 виклик Telegram і 1 корінь", async () => {

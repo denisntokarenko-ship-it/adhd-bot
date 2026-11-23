@@ -104,8 +104,9 @@ export async function listUnplannedItems(db: Db, limit: number): Promise<Unplann
 // `lease_until = now + LEASE_MS`; статус лишається `pending` — рядок закриває відправка (2.2). Оператор атомарний
 // (D1 виконує запити до бази послідовно), тож два паралельні прогони не візьмуть той самий рядок
 // (перевірено живцем на D1 preview — «Рішення» 2.1). `excludeUserIds` — користувачі в режимі тиші (S2.9).
-// Рядки рутин (S4.5.h, Р4.5): тиха ніч їх не стосується, пауза — так; для них виключення — `routineExcludeIds`
-// (користувачі на паузі), за замовчуванням те саме, що й для решти.
+// Рядки рутин (S4.5.h, Р4.5): тиха ніч їх не стосується; пауза тримає лише звички — для них виключення
+// `routineExcludeIds` (користувачі на паузі), за замовчуванням те саме, що й для решти. Ліки (`kind = 'med'`)
+// не виключаються ніколи: «ліки ігнорують паузу» (рішення Дениса 2026-11-23, В4 рев'ю R-4).
 export async function claimDueReminders(
   db: Db,
   now: number,
@@ -118,7 +119,10 @@ export async function claimDueReminders(
       `UPDATE reminders SET lease_until = ?4
        WHERE id IN (SELECT id FROM reminders
                     WHERE status = 'pending' AND fire_at <= ?1 AND (lease_until IS NULL OR lease_until <= ?1)
-                      AND user_id NOT IN (SELECT value FROM json_each(CASE WHEN routine_id IS NULL THEN ?3 ELSE ?5 END))
+                      AND user_id NOT IN (SELECT value FROM json_each(CASE
+                            WHEN routine_id IS NULL THEN ?3
+                            WHEN (SELECT t.kind FROM routines t WHERE t.id = reminders.routine_id) = 'med' THEN '[]'
+                            ELSE ?5 END))
                     ORDER BY fire_at, id LIMIT ?2)
          AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?1)
        RETURNING ${REMINDER_COLUMNS}`,
@@ -138,7 +142,7 @@ export async function cancelStaleReminders(db: Db, now: number, staleMs: number)
 }
 
 // Користувачі в режимі тиші (S2.9): пауза активна або локальна хвилина в тихих годинах. Їхніх рядків `claim` не бере.
-// `pauseOnly` — лише пауза, без тихої ночі: так чекають рядки рутин (S4.5.h, Р4.5).
+// `pauseOnly` — лише пауза, без тихої ночі: так чекають рядки звичок (S4.5.h, Р4.5; ліки не чекають і паузи).
 export async function listQuietUserIds(db: Db, now: number, pauseOnly = false): Promise<number[]> {
   const res = await d1Of(db)
     .prepare("SELECT id, tz, quiet_from, quiet_to, pause_until FROM users")
