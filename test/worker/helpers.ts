@@ -2,10 +2,29 @@ import { env } from "cloudflare:test";
 import { vi } from "vitest";
 import { handleRequest } from "../../src/app";
 import type { BotDeps } from "../../src/bot";
+import type { Db } from "../../src/db/index";
+import { saveDraft, startDraft } from "../../src/db/routines";
+import type { RoutineKind } from "../../src/routines/schedule";
 import type { AppEnv } from "../../src/env";
 
 export const NOW = Date.parse("2026-11-20T10:00:00Z");
 export const SECRET = "test-webhook-secret";
+
+export interface SeedRoutine {
+  kind: RoutineKind;
+  title: string;
+  times: readonly string[];
+  daysMask: number;
+}
+
+// Рутина для тестів — ТИМ САМИМ шляхом, що й «✅ Зберегти» майстра (рев'ю R-4, В3): чернетка на кроці `confirm` →
+// `saveDraft` (escalate = kind 'med', ліміт ROUTINES_MAX). Окремої «тестової» вставки немає, щоб тести не доводили
+// поведінку коду, якого в проді не існує. Часи — як після кнопок: відсортовані, без повторів. `null` — ліміт.
+export async function seedRoutine(userId: number, db: Db, r: SeedRoutine, now: number): Promise<number | null> {
+  await startDraft(userId, db, { routineId: null, step: "confirm", kind: r.kind, title: r.title, times: r.times, daysMask: r.daysMask }, now);
+  const out = await saveDraft(userId, db, now);
+  return out.kind === "created" ? out.id : null;
+}
 
 export function baseEnv(overrides: Partial<Record<keyof AppEnv, unknown>> = {}): AppEnv {
   const merged = { ...(env as unknown as AppEnv), ...overrides } as Record<string, unknown>;

@@ -2,7 +2,7 @@
 // кожен запит має `WHERE user_id = ?`; чужий `routine_id` нічого не читає й не змінює (4.1.d).
 // Дані звідси НІКОЛИ не йдуть у промпт ШІ (правило 4 CLAUDE.md, НФ-2): `src/ai/**` цей модуль не імпортує (тест-межа).
 import { LATE_MS } from "../reminders/plan";
-import { maxAttemptsFor, nextRoutineSlot, normalizeTimes, ROUTINES_MAX, validDaysMask, validTitle, WIZARD_TTL_MS, type RoutineKind } from "../routines/schedule";
+import { maxAttemptsFor, nextRoutineSlot, ROUTINES_MAX, validTitle, WIZARD_TTL_MS, type RoutineKind } from "../routines/schedule";
 import { d1Of, type Db } from "./index";
 import { routineDoneStatement } from "./points";
 import type { Reminder } from "./reminders";
@@ -35,38 +35,11 @@ function checkedTitle(title: string): string {
   if (!validTitle(title)) throw new RangeError("routine title: 1..64 chars, one line");
   return title;
 }
-function checkedTimes(times: readonly string[]): string {
-  const t = normalizeTimes(times);
-  if (t === null) throw new RangeError("routine times: 1..6 × HH:MM");
-  return JSON.stringify(t);
-}
-function checkedMask(mask: number): number {
-  if (!validDaysMask(mask)) throw new RangeError("routine days_mask: 1..127");
-  return mask;
-}
 
-export interface NewRoutine {
-  kind: RoutineKind;
-  title: string;
-  times: readonly string[];
-  daysMask: number;
-  escalate?: boolean; // за замовчуванням — `kind = 'med'` (S4.2.f)
-}
-
-// Нова рутина (4.2.f). Ліміт `ROUTINES_MAX` — у тому ж операторі (а не окремим COUNT), тож два паралельні збереження
-// не перескочать 20. `null` — ліміт вичерпано.
-export async function createRoutine(userId: number, db: Db, r: NewRoutine, now: number): Promise<number | null> {
-  const row = await d1Of(db)
-    .prepare(
-      `INSERT INTO routines (user_id, kind, title, times, days_mask, escalate, active, created_at, updated_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7
-       WHERE (SELECT COUNT(*) FROM routines WHERE user_id = ?1) < ?8
-       RETURNING id`,
-    )
-    .bind(userId, r.kind, checkedTitle(r.title), checkedTimes(r.times), checkedMask(r.daysMask), (r.escalate ?? r.kind === "med") ? 1 : 0, now, ROUTINES_MAX)
-    .first<{ id: number }>();
-  return row?.id ?? null;
-}
+// Створення й зміна рутини — ЛИШЕ через чернетку майстра (рев'ю R-4, В3: другої реалізації немає):
+// нова — `startDraft` → … → `saveDraft` (ліміт `ROUTINES_MAX` у тому ж операторі); назва — `takeTitleInput`;
+// час і дні — `saveDraft` з `routine_id`. Часи й дні приходять лише кнопками (`normalizeTimes`, regex `RW_RE`
+// у handler), назва — через `checkedTitle`; CHECK `0006` — друга лінія.
 
 export async function getRoutine(userId: number, db: Db, routineId: number): Promise<Routine | null> {
   const row = await d1Of(db).prepare(`SELECT ${COLUMNS} FROM routines WHERE id = ?1 AND user_id = ?2`).bind(routineId, userId).first<RoutineRow>();
@@ -86,30 +59,6 @@ const DELETE_UNSENT_ROOTS = `DELETE FROM reminders
   WHERE user_id = ?1 AND routine_id = ?2 AND kind = 'routine' AND parent_id IS NULL AND status = 'pending'
     AND NOT EXISTS (SELECT 1 FROM reminders s WHERE s.user_id = ?1 AND s.routine_id = reminders.routine_id
                       AND s.slot_at = reminders.slot_at AND s.sent_at IS NOT NULL)`;
-
-export interface RoutinePatch {
-  title?: string;
-  times?: readonly string[];
-  daysMask?: number;
-}
-
-// Зміна назви / часу / днів (S4.7.b–c) одним batch. Час чи дні змінились → невідправлені корені `DELETE` (S4.4).
-// `false` — рутини немає або вона чужа (нічого не змінено).
-export async function updateRoutine(userId: number, db: Db, routineId: number, patch: RoutinePatch, now: number): Promise<boolean> {
-  const sets: string[] = [];
-  const args: unknown[] = [];
-  if (patch.title !== undefined) (sets.push(`title = ?${args.length + 4}`), args.push(checkedTitle(patch.title)));
-  if (patch.times !== undefined) (sets.push(`times = ?${args.length + 4}`), args.push(checkedTimes(patch.times)));
-  if (patch.daysMask !== undefined) (sets.push(`days_mask = ?${args.length + 4}`), args.push(checkedMask(patch.daysMask)));
-  if (sets.length === 0) return (await getRoutine(userId, db, routineId)) !== null;
-  const d1 = d1Of(db);
-  const stmts = [
-    d1.prepare(`UPDATE routines SET ${sets.join(", ")}, updated_at = ?3 WHERE id = ?2 AND user_id = ?1`).bind(userId, routineId, now, ...args),
-  ];
-  if (patch.times !== undefined || patch.daysMask !== undefined) stmts.push(d1.prepare(DELETE_UNSENT_ROOTS).bind(userId, routineId));
-  const [upd] = await d1.batch(stmts);
-  return (upd!.meta.changes ?? 0) === 1;
-}
 
 // ⏸ Пауза (S4.7.d): `active = 0`, невідправлені корені → `DELETE`, решта `pending` слота (повтори, «+15 хв» уже
 // розпочатого ланцюга) → `cancelled`. Одним batch. `false` — рутини немає або вона чужа.
@@ -140,20 +89,18 @@ export async function resumeRoutine(userId: number, db: Db, routineId: number, n
   return (upd!.meta.changes ?? 0) === 1;
 }
 
-// Відповідь на слот (S4.5, S4.6) — ідемпотентно, тримає `UNIQUE(routine_id, scheduled_for)`, а не `if`:
-// - `taken` / `skipped`: новий рядок, або `missed` → відповідь (4.6.b, `answered_at = now`); `taken`/`skipped` — назавжди;
-// - `missed` (cron): лише новий рядок, наявний не змінює (`answered_at NULL`).
-// Повертає id рядка, якщо його створено чи змінено цим викликом; `null` — слот уже мав відповідь або рутина чужа.
-export async function logAnswer(userId: number, db: Db, routineId: number, scheduledFor: number, status: RoutineAnswer, now: number): Promise<number | null> {
+// `missed` (S4.6, cron) — лише новий рядок; наявний (і `missed`, і відповідь) не змінює: тримає
+// `UNIQUE(routine_id, scheduled_for)`, а не `if`. Відповідь кнопкою (`taken`/`skipped`, і `missed` → відповідь,
+// 4.6.b) — лише `answerSlot` (рев'ю R-4, В3: другої реалізації немає). `null` — рядок уже був або рутина чужа.
+export async function logMissed(userId: number, db: Db, routineId: number, scheduledFor: number, now: number): Promise<number | null> {
   const row = await d1Of(db)
     .prepare(
       `INSERT INTO routine_logs (user_id, routine_id, scheduled_for, status, answered_at, created_at)
-       SELECT ?1, id, ?3, ?4, ?5, ?6 FROM routines WHERE id = ?2 AND user_id = ?1
-       ON CONFLICT (routine_id, scheduled_for) DO UPDATE SET status = excluded.status, answered_at = excluded.answered_at
-         WHERE routine_logs.status = 'missed' AND excluded.status <> 'missed'
+       SELECT ?1, id, ?3, 'missed', NULL, ?4 FROM routines WHERE id = ?2 AND user_id = ?1
+       ON CONFLICT (routine_id, scheduled_for) DO NOTHING
        RETURNING id`,
     )
-    .bind(userId, routineId, scheduledFor, status, status === "missed" ? null : now, now)
+    .bind(userId, routineId, scheduledFor, now)
     .first<{ id: number }>();
   return row?.id ?? null;
 }
