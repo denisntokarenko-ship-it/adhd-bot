@@ -73,6 +73,8 @@ npm run release -- --dry-run
 npm run release -- --first
 ```
 
+> У Windows PowerShell `npm run release` може взяти `bash` з WSL (`execvpe(/bin/bash) failed`) — тоді напряму через Git Bash: `& "C:Program FilesGitinash.exe" scripts/release.sh --first`.
+
 (далі — просто `npm run release`; без `--first` при порожньому `docs/releases.md` реліз відмовить, тож рядок кожної викатки дописуй у журнал). Що робить `scripts/release.sh`: чисте дерево й HEAD = `origin/main` → typecheck + test → prod D1 створено → 5 секретів є → поточна версія prod на 100 % (без `--first` не прочиталась — стоп) і версія preview → **bookmark Time Travel** у `~/adhd-releases/<час>-<sha>/rollback.txt` → `migrations list` (не впізнав таблицю — стоп) → питання «так» → `migrations apply` (і перевірка, що нічого не лишилось) → `wrangler deploy --env production --var GIT_SHA:<sha>` (адреса й `schedule: * * * * *` у виводі) → `set-commands.mjs` (токен prod-бота вводиш ти) → 2 хв → `/health` prod (ok, sha = HEAD, cron не stale) і версія preview (та сама, що до міграцій, — інакше стоп) → друкує зроблене й рядок для `docs/releases.md`. Журнали кожного кроку — у тій самій теці `~/adhd-releases/…` (поза репо: переживе видалення worktree).
 
 **Вебхук (лише перша викатка)** — у вікні з `$s` з §2; URL — з виводу релізу:
