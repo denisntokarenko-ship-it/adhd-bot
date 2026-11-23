@@ -46,5 +46,5 @@ crons = ["* * * * *"]
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "adhd-prod"
-database_id = "REPLACE_WITH_PROD_D1_ID" # ресурси prod створює крок 3.3 (спека 0.5.f), не 0.4
+database_id = "b05dcc6b-7084-4698-b2c6-cd213c8a6e08" # adhd-prod, створено 2026-11-23 (RUNBOOK §1.2)
 migrations_dir = "migrations"

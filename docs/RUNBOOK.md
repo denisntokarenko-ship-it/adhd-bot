@@ -16,6 +16,8 @@ Prod — окремі Worker `adhd-bot-prod`, D1 `adhd-prod`, бот і моні
 
 ## 1. 👤 Ресурси prod (один раз)
 
+> Перед будь-якою командою wrangler: `npx wrangler whoami` має показати `account_id` з `wrangler.toml`. Інший акаунт (спільний вхід з іншим проєктом) → окремий профіль у **кожному** вікні: `$env:XDG_CONFIG_HOME="$HOME.wrangler-adhd"`; вхід у нього — `npx wrangler login --browser=false`, посилання — в анонімному вікні, термінал не закривати до «Successfully logged in».
+
 1. **Бот.** BotFather → `/newbot` (окремий від preview), назва, опис, аватар; `/setjoingroups` → Disable. Токен — лише в менеджер паролів.
 2. **D1.** Створити й вписати id у `wrangler.toml` окремим маленьким PR (`database_id` не секрет — preview теж у репо):
 
@@ -25,7 +27,7 @@ Prod — окремі Worker `adhd-bot-prod`, D1 `adhd-prod`, бот і моні
 
    На питання wrangler «додати в конфіг?» — ні: правиш `[[env.production.d1_databases]] database_id` вручну замість `REPLACE_WITH_PROD_D1_ID`. Після мержу `npm run release -- --dry-run` уже показує справжній список міграцій (усі `0001…0005`) і bookmark.
 3. **Монітор.** healthchecks.io → нова перевірка `adhd-prod` (окрема від preview): period 1 хв, grace 4 хв, сповіщення — тобі (Telegram/пошта). Ping URL — секрет (§2), у файли не пишеться. Одразу натисни «Send test notification» і переконайся, що дійшло (3.10.b).
-4. **Адреса.** `env.production` має `workers_dev = true` → `https://adhd-bot-prod.<піддомен>.workers.dev` (рекомендація `open-questions.md`, **чекає твого підтвердження**; свій домен — після MVP).
+4. **Адреса.** `env.production` має `workers_dev = true` → `https://adhd-bot-prod.<піддомен>.workers.dev` (підтвердив Денис 2026-11-23, `decisions.md`; свій домен — після MVP).
 
 ## 2. 👤 Секрети prod (назви з НФ-8 — їх читає код; `TELEGRAM_BOT_TOKEN`/`HEALTHCHECK_URL` код не читає)
 
