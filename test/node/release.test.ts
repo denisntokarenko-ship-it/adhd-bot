@@ -159,7 +159,8 @@ describe("3.3 реліз: розбір виводу wrangler", () => {
     expect(parseDeployedVersion(split)).toBeNull();
   });
   it("рев'ю 3.3 Д2: журнал викаток — рахуються лише рядки з датою", () => {
-    const journal = readFileSync(path.join(ROOT, "docs/releases.md"), "utf8");
+    // Порожній журнал = справжній файл без рядків викаток (після першого релізу файл уже не порожній).
+    const journal = readFileSync(path.join(ROOT, "docs/releases.md"), "utf8").split("\n").filter((l) => !/^\| \d{4}-\d{2}-\d{2} /.test(l)).join("\n");
     expect(countReleases(journal)).toBe(0); // заголовок і |---| — не викатки
     expect(countReleases(`${journal}| 2026-11-25 | \`c729d55\` | 0001_init | \`b\` | ✅ |\n`)).toBe(1);
   });
@@ -322,7 +323,7 @@ describe("3.3 release.sh: справжній шлях (підмінні git/npm/
   const PREV = "da2f32a9-9d89-4732-af5f-fedfb336f35d";
   const PREVIEW_V1 = "11111111-aaaa-4bbb-8ccc-000000000001";
   const PREVIEW_V2 = "22222222-aaaa-4bbb-8ccc-000000000002";
-  const JOURNAL = readFileSync(path.join(ROOT, "docs/releases.md"), "utf8");
+  const JOURNAL = readFileSync(path.join(ROOT, "docs/releases.md"), "utf8").split("\n").filter((l) => !/^\| \d{4}-\d{2}-\d{2} /.test(l)).join("\n"); // порожній журнал: без рядків викаток
   const ONE_RELEASE = `${JOURNAL}| 2026-11-25 | \`ccccccc\` | 0001_init | \`${BOOKMARK}\` | ✅ |\n`;
   const sandboxes: string[] = [];
   afterAll(() => sandboxes.forEach((d) => rmSync(d, { recursive: true, force: true })));
