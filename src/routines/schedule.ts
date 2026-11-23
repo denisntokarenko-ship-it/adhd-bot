@@ -9,6 +9,10 @@ export const TITLE_MAX = 64; // символів у назві, один ряд�
 export const ALL_DAYS = 127; // days_mask: біт 0 = понеділок … біт 6 = неділя
 export const WEEKDAYS = 31; // Пн–Пт
 export const MISSED_AFTER_MS = 30 * 60_000; // після останньої відправки вичерпаного ланцюга без відповіді — `missed`
+export const WIZARD_TTL_MS = 15 * 60_000; // чернетка майстра мертва після цього; текст — звичайний запис (S4.3)
+export const ROUTINE_TTL_MS = 3 * 3_600_000; // рядок рутини, що не пішов за 3 год після `fire_at`, мовчки `cancelled` (S4.5.h)
+export const ROUTINE_SNOOZE_MIN = 15; // кнопка «+15 хв» (4.5.e)
+export const MORNING_ROUTINES = 5; // рутин у рядку ранку, далі «…ще N» (4.8.b)
 
 export type RoutineKind = "med" | "habit";
 

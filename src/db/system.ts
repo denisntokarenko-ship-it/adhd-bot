@@ -104,18 +104,26 @@ export async function listUnplannedItems(db: Db, limit: number): Promise<Unplann
 // `lease_until = now + LEASE_MS`; статус лишається `pending` — рядок закриває відправка (2.2). Оператор атомарний
 // (D1 виконує запити до бази послідовно), тож два паралельні прогони не візьмуть той самий рядок
 // (перевірено живцем на D1 preview — «Рішення» 2.1). `excludeUserIds` — користувачі в режимі тиші (S2.9).
-export async function claimDueReminders(db: Db, now: number, limit: number, excludeUserIds: number[] = []): Promise<Reminder[]> {
+// Рядки рутин (S4.5.h, Р4.5): тиха ніч їх не стосується, пауза — так; для них виключення — `routineExcludeIds`
+// (користувачі на паузі), за замовчуванням те саме, що й для решти.
+export async function claimDueReminders(
+  db: Db,
+  now: number,
+  limit: number,
+  excludeUserIds: number[] = [],
+  routineExcludeIds: number[] = excludeUserIds,
+): Promise<Reminder[]> {
   const res = await d1Of(db)
     .prepare(
       `UPDATE reminders SET lease_until = ?4
        WHERE id IN (SELECT id FROM reminders
                     WHERE status = 'pending' AND fire_at <= ?1 AND (lease_until IS NULL OR lease_until <= ?1)
-                      AND user_id NOT IN (SELECT value FROM json_each(?3))
+                      AND user_id NOT IN (SELECT value FROM json_each(CASE WHEN routine_id IS NULL THEN ?3 ELSE ?5 END))
                     ORDER BY fire_at, id LIMIT ?2)
          AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?1)
        RETURNING ${REMINDER_COLUMNS}`,
     )
-    .bind(now, limit, JSON.stringify(excludeUserIds), now + REMINDER_LEASE_MS)
+    .bind(now, limit, JSON.stringify(excludeUserIds), now + REMINDER_LEASE_MS, JSON.stringify(routineExcludeIds))
     .all<Reminder>();
   return res.results.sort((a, b) => a.fire_at - b.fire_at || a.id - b.id);
 }
@@ -130,12 +138,13 @@ export async function cancelStaleReminders(db: Db, now: number, staleMs: number)
 }
 
 // Користувачі в режимі тиші (S2.9): пауза активна або локальна хвилина в тихих годинах. Їхніх рядків `claim` не бере.
-export async function listQuietUserIds(db: Db, now: number): Promise<number[]> {
+// `pauseOnly` — лише пауза, без тихої ночі: так чекають рядки рутин (S4.5.h, Р4.5).
+export async function listQuietUserIds(db: Db, now: number, pauseOnly = false): Promise<number[]> {
   const res = await d1Of(db)
     .prepare("SELECT id, tz, quiet_from, quiet_to, pause_until FROM users")
     .all<{ id: number; tz: string; quiet_from: number; quiet_to: number; pause_until: number | null }>();
   return res.results
-    .filter((u) => (u.pause_until !== null && u.pause_until > now) || inQuietHours(u.quiet_from, u.quiet_to, minutesOfDay(now, u.tz)))
+    .filter((u) => (u.pause_until !== null && u.pause_until > now) || (!pauseOnly && inQuietHours(u.quiet_from, u.quiet_to, minutesOfDay(now, u.tz))))
     .map((u) => u.id);
 }
 

@@ -64,17 +64,21 @@ describe("S3.1 nextDigestAt", () => {
   });
 });
 
-// Принцип 3 і правило 4: огляди без ШІ й без рутин — структурно, а не лише «мок не покликали».
-describe("S3.1.i / правило 4: код оглядів не імпортує ШІ й не читає рутини", () => {
+// Принцип 3 і правило 4: огляди без ШІ — структурно, а не лише «мок не покликали». Р4.6 (phase-4.md) уточнює принцип 3:
+// огляди (код, без ШІ) читають рутини — але лише через `src/routines/digest.ts`, а не напряму з таблиць.
+describe("S3.1.i / правило 4: код оглядів не імпортує ШІ; рутини — лише через routines/digest (Р4.6)", () => {
   const dir = new URL("../../src/digests/", import.meta.url);
   const files = [...readdirSync(dir).map((f) => new URL(f, dir)), new URL("../../src/db/digests.ts", import.meta.url)];
-  it("жодного імпорту ../ai/*, жодної згадки routines", () => {
+  it("жодного імпорту ../ai/*; рутини — лише імпорт ../routines/digest", () => {
     expect(files.length).toBeGreaterThan(4);
     for (const f of files) {
       const code = readFileSync(f, "utf-8").split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith("//")); // коментарі можуть згадувати правило
       const text = code.join(" ");
       expect(text, f.pathname).not.toMatch(/from\s+["'][^"']*\/ai\//);
-      expect(text, f.pathname).not.toMatch(/routine/i);
+      // імпорти з рутинами — лише ../routines/digest (готовий рядок огляду); таблиць рутин код оглядів не читає сам
+      const routineImports = [...text.matchAll(/from\s+["']([^"']*routine[^"']*)["']/gi)].map((m) => m[1]);
+      for (const src of routineImports) expect(src, f.pathname).toBe("../routines/digest");
+      expect(text, f.pathname).not.toMatch(/(?:FROM|JOIN)\s+routine/i);
     }
   });
 });

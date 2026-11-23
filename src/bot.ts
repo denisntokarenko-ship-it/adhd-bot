@@ -10,6 +10,7 @@ import { handleReminderCallback, isReminderCallback } from "./reminders/buttons"
 import { handleDigestCallback, isDigestCallback } from "./digests/buttons";
 import { handleSettings, handleSettingsCallback, handleTz, isSettingsCallback } from "./settings/handler";
 import { handlePause, handleQuiet, handleQuietCallback, handleResume, isQuietCallback } from "./quiet";
+import { handleRoutineCallback, handleRoutinesCommand, handleTitleMessage, isRoutineCallback, titleDraft } from "./routines/handler";
 import { openDb, type Db } from "./db/index";
 import { ensureUser, setVariantIdx, type User, type VariantKind } from "./db/users";
 import type { AppEnv } from "./env";
@@ -67,6 +68,7 @@ const RESUME_RE = /^\/resume(@\w+)?(\s|$)/;
 const QUIET_RE = /^\/quiet(@\w+)?(\s|$)/;
 const SETTINGS_RE = /^\/settings(@\w+)?(\s|$)/;
 const TZ_RE = /^\/tz(@\w+)?(\s|$)/;
+const ROUTINES_RE = /^\/routines(@\w+)?(\s|$)/;
 const COMMAND_RE = /^\/\w+(@\w+)?(\s|$)/;
 
 export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps): Promise<void> {
@@ -97,7 +99,13 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
     }
     const user = await userOrRetry(fromId);
     const text = ctx.message.text;
-    if (ctx.message.forward_origin) {
+    const rd = { db, user, clock: deps.clock, rand: deps.rand };
+    // Порядок S4.3: команда → жива чернетка на кроці `title` (назва; до будь-якого розбору) → «Не так» → захоплення.
+    const draft = COMMAND_RE.test(text) && !ctx.message.forward_origin ? null : await titleDraft(rd);
+    if (draft !== null) {
+      // Назва рутини — не запис: ні Claude, ні Whisper, ні `captures` (4.3.a). Пересилання — «назву лише текстом» (4.3.e).
+      await handleTitleMessage(ctx, rd, draft, ctx.message.forward_origin ? null : text);
+    } else if (ctx.message.forward_origin) {
       // Переслане — дані, не команда: навіть «/start» чи «/today» у пересланому тексті стає записом (S1.8).
       // forward_origin (ім'я/канал автора) далі не передається: у промпт і в БД іде лише текст (S1.8.d).
       await handleText(ctx, captureDeps(user), "forward");
@@ -115,6 +123,8 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
       await handleQuiet(ctx);
     } else if (SETTINGS_RE.test(text)) {
       await handleSettings(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // без ШІ (S3.7)
+    } else if (ROUTINES_RE.test(text)) {
+      await handleRoutinesCommand(ctx, rd); // майстер і список рутин — лише кнопки (S4.2, S4.7)
     } else if (TZ_RE.test(text)) {
       await handleTz(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // `/tz <IANA>`: назва з перевіркою, без «чекаю назву» (S3.7.c)
     } else if (COMMAND_RE.test(text)) {
@@ -132,6 +142,14 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
     const fromId = ctx.from?.id;
     if (fromId === undefined || allowlist === null || !allowlist.has(fromId)) return;
     const forwarded = ctx.message.forward_origin !== undefined;
+    const captioned = forwarded && (ctx.message.caption ?? "").trim() !== "";
+    if (ctx.message.voice || captioned) {
+      // Голос чи пересилання на кроці `title` — у майстер, не у Whisper і не в захоплення (4.3.e).
+      const user = await userOrRetry(fromId);
+      const rd = { db, user, clock: deps.clock, rand: deps.rand };
+      const draft = await titleDraft(rd);
+      if (draft !== null) return void (await handleTitleMessage(ctx, rd, draft, null));
+    }
     if (ctx.message.voice) {
       await handleVoice(ctx, captureDeps(await userOrRetry(fromId)), forwarded ? "forward" : "voice");
     } else if (forwarded && (ctx.message.caption ?? "").trim() !== "") {
@@ -159,6 +177,8 @@ export async function processUpdate(update: Update, env: AppEnv, deps: BotDeps):
         toast = await handleDigestCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // «показати все» й тиждень (крок 3.1)
       } else if (isSettingsCallback(ctx.callbackQuery.data)) {
         toast = await handleSettingsCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // /settings (крок 3.2)
+      } else if (isRoutineCallback(ctx.callbackQuery.data)) {
+        toast = await handleRoutineCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // рутини (крок 4.2)
       } else if (isQuietCallback(ctx.callbackQuery.data)) {
         toast = await handleQuietCallback(ctx, { db, user, clock: deps.clock, rand: deps.rand }); // /pause, /quiet (крок 2.4)
       } else {

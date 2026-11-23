@@ -44,7 +44,8 @@ export async function isKnownUpdate(userId: number, db: Db, tgUpdateId: number):
   const row = await d1Of(db)
     .prepare(
       `SELECT (SELECT COUNT(*) FROM captures WHERE user_id = ?1 AND tg_update_id = ?2)
-            + (SELECT COUNT(*) FROM capture_fixes WHERE user_id = ?1 AND tg_update_id = ?2) AS n`,
+            + (SELECT COUNT(*) FROM capture_fixes WHERE user_id = ?1 AND tg_update_id = ?2)
+            + (SELECT COUNT(*) FROM routine_inputs WHERE user_id = ?1 AND tg_update_id = ?2) AS n`,
     )
     .bind(userId, tgUpdateId)
     .first<{ n: number }>();

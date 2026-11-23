@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 // Описи без докору й без слів-звинувачень (НФ-4); команди — малі латинські літери, 1–32 символи (вимога Telegram).
 export const BOT_COMMANDS = [
   { command: "today", description: "що на сьогодні" },
+  { command: "routines", description: "ліки й звички за розкладом" },
   { command: "settings", description: "налаштування: пояс, тиха ніч, огляди" },
   { command: "pause", description: "тиша на кілька годин" },
   { command: "resume", description: "зняти паузу" },
