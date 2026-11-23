@@ -5,6 +5,7 @@ import type { AppEnv } from "./env";
 import { planDigests } from "./digests/planner";
 import { dispatchReminders } from "./reminders/dispatch";
 import { planReminders } from "./reminders/planner";
+import { planRoutines } from "./routines/planner";
 import { processPending, type RetryDeps } from "./retry";
 
 export const PING_TIMEOUT_MS = 5_000;
@@ -68,6 +69,13 @@ async function processQueue(env: AppEnv, clock: Clock, deps: RetryDeps): Promise
     await planDigests(openDb(env), clock.now());
   } catch (err) {
     console.error("cron: digests planning failed", err instanceof Error ? err.name : "unknown");
+  }
+  // Рутини (S4.4, S4.6): `missed` вичерпаних ланцюгів і корінь найближчого слота — кожен тик, після записів і оглядів,
+  // до відправки (Р4.10: ланцюг самовідновлюється за хвилину, без «сплановано до»).
+  try {
+    await planRoutines(openDb(env), clock.now());
+  } catch (err) {
+    console.error("cron: routines planning failed", err instanceof Error ? err.name : "unknown");
   }
   // Відправка: STALE → тиша → оренда → добір → відправка → закриття (S2.3). Свій try/catch: збій відправки не гасить підбір.
   try {

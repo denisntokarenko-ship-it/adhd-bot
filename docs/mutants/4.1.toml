@@ -1,0 +1,91 @@
+# Мутанти кроку 4.1 (схема рутин і шар даних). M1–M3 — з промпту 4.1 (M1 — у прочитанні Р4.11: `days_mask` прибрано
+# з вибору слотів, а не з `planDay`); M4–M10 — мутанти спеки (4.1.b, 4.5.c, 4.6.d) і межі НФ-3 / 4.1.e.
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/4.1.toml --report docs/mutants/4.1.md
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/routines/schedule.ts"
+old = '''  if ((r.days_mask & dayBit(isoDow(dateMs(date)))) === 0) return [];'''
+new = '''  if (false) return [];'''
+why = "days_mask не враховано -> рутина Пн–Пт планується на суботу"
+match = 'у суботу нічого'
+
+[[mutant]]
+id = "M2"
+file = "src/ai/parse.ts"
+old = '''import { cleanBody, cleanTitle, noteFromText as noteOf } from "../note";'''
+new = '''import { cleanBody, cleanTitle, noteFromText as noteOf } from "../note";
+import "../db/routines";'''
+why = "модуль, що збирає промпт, дістає шар даних рутин -> тест-межа 4.3.g"
+match = '4\.3\.g межа з ШІ'
+
+[[mutant]]
+id = "M3"
+file = "migrations/0006_routines.sql"
+old = '''  CHECK ((status = 'missed') = (answered_at IS NULL)),
+  UNIQUE (routine_id, scheduled_for)'''
+new = '''  CHECK ((status = 'missed') = (answered_at IS NULL))'''
+why = "без UNIQUE слота відповідь не одна -> logAnswer двічі"
+match = 'двічі «taken» → один рядок'
+
+[[mutant]]
+id = "M4"
+file = "migrations/0006_routines.sql"
+old = '''       lease_until, sent_at, sent_as, tg_message_id, variant_idx, created_at, NULL, NULL'''
+new = '''       NULL, sent_at, sent_as, tg_message_id, variant_idx, created_at, NULL, NULL'''
+why = "4.1.b: колонку пропущено в копіюванні -> поле рядка після 0006 інше"
+match = 'кожне поле кожного рядка'
+
+[[mutant]]
+id = "M5"
+file = "migrations/0006_routines.sql"
+old = '''INSERT INTO sqlite_sequence (name, seq) SELECT 'reminders_new', seq FROM sqlite_sequence WHERE name = 'reminders';'''
+new = ''''''
+why = "4.1.b: перебудова без перенесення лічильника -> id видаленого рядка дістається новому"
+match = 'кожне поле кожного рядка'
+
+[[mutant]]
+id = "M6"
+file = "migrations/0006_routines.sql"
+old = '''CREATE UNIQUE INDEX ux_ledger_routine_done ON points_ledger(routine_log_id) WHERE reason = 'done' AND routine_log_id IS NOT NULL;'''
+new = ''''''
+why = "4.5.c: без ux_ledger_routine_done друге «✅» слота -> +20"
+match = 'одне «✅» на слот'
+
+[[mutant]]
+id = "M7"
+file = "migrations/0006_routines.sql"
+old = '''CREATE TRIGGER tg_captures_not_routine_input BEFORE INSERT ON captures
+WHEN EXISTS (SELECT 1 FROM routine_inputs WHERE user_id = NEW.user_id AND tg_update_id = NEW.tg_update_id)
+BEGIN SELECT RAISE(ABORT, 'update is a routine input'); END;'''
+new = ''''''
+why = "4.1.e: без тригера на captures повтор назви стає захопленням"
+match = '4\.1\.e'
+
+[[mutant]]
+id = "M8"
+file = "src/db/system.ts"
+old = '''WHERE r.routine_id IS NOT NULL AND r.status = 'sent' AND r.attempt = r.max_attempts AND r.sent_at <= ?1'''
+new = '''WHERE r.routine_id IS NOT NULL AND r.status = 'sent' AND r.sent_at <= ?1'''
+why = "4.6.d: «є sent без відповіді» замість «ланцюг вичерпано» -> обірваний ланцюг стає missed"
+match = '4\.6\.c/d'
+
+[[mutant]]
+id = "M9"
+file = "src/db/routines.ts"
+old = '''         AND NOT EXISTS (SELECT 1 FROM reminders r WHERE r.user_id = ?1 AND r.routine_id = ?2 AND r.slot_at = ?3 AND r.parent_id IS NULL)
+'''
+new = '''
+'''
+why = "4.5.k: лише ux_rem_routine_pending -> скасований корінь не блокує новий щотику"
+match = '4\.5\.k \(БД\)'
+
+[[mutant]]
+id = "M10"
+file = "src/db/routines.ts"
+old = '''       SELECT ?1, id, ?3, ?4, ?5, ?6 FROM routines WHERE id = ?2 AND user_id = ?1'''
+new = '''       SELECT ?1, id, ?3, ?4, ?5, ?6 FROM routines WHERE id = ?2'''
+why = "4.1.d: logAnswer без власника -> відповідь на чужу рутину"
+match = '4\.1\.d НФ-3'
