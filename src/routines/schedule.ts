@@ -48,8 +48,6 @@ export function normalizeTimes(times: readonly string[]): string[] | null {
   return out.length >= 1 && out.length <= TIMES_MAX ? out : null;
 }
 
-export const validDaysMask = (mask: number) => Number.isInteger(mask) && mask >= 1 && mask <= ALL_DAYS;
-
 // Спроб у ланцюгу слота: ліки (escalate) — 5→15→30 до відповіді, звичка — одна.
 export const maxAttemptsFor = (escalate: boolean) => (escalate ? MAX_ATTEMPTS_ESCALATING : 1);
 

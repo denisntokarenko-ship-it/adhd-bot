@@ -4,14 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiClient } from "../../src/ai/client";
 import type { Stt } from "../../src/ai/stt";
 import { openDb } from "../../src/db/index";
-import { createRoutine } from "../../src/db/routines";
+import { create } from "../../src/db/items";
 import { applySetting } from "../../src/db/settings";
 import { ensureUser } from "../../src/db/users";
 import { morningRoutines, eveningRoutines } from "../../src/routines/digest";
 import { planRoutines } from "../../src/routines/planner";
 import { runScheduled } from "../../src/scheduled";
 import { ACK_SKIP_POOL, ACK_TAKEN_POOL, RW_ALREADY_SAVED, RW_DEAD, RW_LIMIT, RW_TITLE_BAD, RW_TITLE_TEXT_ONLY } from "../../src/texts";
-import { baseEnv, deps, forwardText, mockTelegram, send, textUpdate, voiceUpdate, type TgCall } from "./helpers";
+import { baseEnv, deps, forwardText, mockTelegram, seedRoutine, send, textUpdate, voiceUpdate, type TgCall } from "./helpers";
 
 const DB = env.DB!;
 const db = () => openDb(baseEnv());
@@ -79,14 +79,15 @@ const tick = (now: number) => runScheduled(baseEnv(), { now: () => now }, { ai: 
 
 const user = async (tg = 111) => (await ensureUser(tg, db(), T0)).id;
 const draft = async () => (await rows<Record<string, unknown>>("SELECT * FROM routine_drafts"))[0];
+const routineIds = async () => (await rows<{ id: number }>("SELECT id FROM routines ORDER BY id")).map((r) => r.id);
 const routineRows = () => rows<Record<string, unknown>>("SELECT kind, title, times, days_mask, escalate, active FROM routines ORDER BY id");
 const remRows = () =>
   rows<{ id: number; kind: string; fire_at: number; attempt: number; max_attempts: number; status: string; slot_at: number; sent_at: number | null; tg_message_id: number | null }>(
     "SELECT id, kind, fire_at, attempt, max_attempts, status, slot_at, sent_at, tg_message_id FROM reminders WHERE routine_id IS NOT NULL ORDER BY id",
   );
 const logs = () => rows<{ status: string; answered_at: number | null; scheduled_for: number }>("SELECT status, answered_at, scheduled_for FROM routine_logs ORDER BY id");
-const med = async (u: number, over: Partial<Parameters<typeof createRoutine>[2]> = {}) =>
-  (await createRoutine(u, db(), { kind: "med", title: "Вітамін D", times: ["08:00"], daysMask: 127, ...over }, T0 - 60 * MIN))!;
+const med = async (u: number, over: Partial<Parameters<typeof seedRoutine>[2]> = {}) =>
+  (await seedRoutine(u, db(), { kind: "med", title: "Вітамін D", times: ["08:00"], daysMask: 127, ...over }, T0 - 60 * MIN))!;
 
 beforeEach(async () => {
   for (const t of ["points_ledger", "routine_logs", "reminders", "routine_drafts", "routine_inputs", "routines", "ai_calls", "items", "capture_fixes", "captures", "users"])
@@ -145,6 +146,26 @@ describe("S4.2 нова рутина кнопками", () => {
     await press("rw:d:5");
     await press("rw:next");
     expect(textOf(tg.calls.filter((c) => c.method === "editMessageText").at(-1)!)).toBe("💊 Магній · 23:30 · Сб\nнагадаю й у тихі години: це ти обрав сам");
+  });
+
+  it("Д3 (R-4, 4.2.c): на 6-му часі ➕ зникає; стара ➕ і 7-й час не додаються", async () => {
+    const tg = mockTelegram();
+    await toTitle();
+    await say(textUpdate("Магній"));
+    const lastKb = () => kbOf(tg.calls.filter((c) => c.method === "editMessageText").at(-1)!).flat().map((b) => b.callback_data);
+    for (const h of ["08", "10", "12", "14", "16"]) {
+      await press(`rw:h:${h}`);
+      await press(`rw:m:${h}00`);
+      expect(lastKb()).toContain("rw:more");
+      await press("rw:more");
+    }
+    await press("rw:h:18");
+    await press("rw:m:1800");
+    expect(await draft()).toMatchObject({ times: '["08:00","10:00","12:00","14:00","16:00","18:00"]', step: "times" });
+    expect(lastKb()).not.toContain("rw:more");
+    expect(lastKb()).toContain("rw:next");
+    for (const b of ["rw:more", "rw:h:20", "rw:m:2000"]) await press(b); // кнопка зі старого повідомлення
+    expect(await draft()).toMatchObject({ times: '["08:00","10:00","12:00","14:00","16:00","18:00"]' });
   });
 
   it("4.2.g: ✖ → чернетку видалено; кнопка мертвої чернетки → «майстер закрився», без змін", async () => {
@@ -310,7 +331,7 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
   it("4.5.a, 4.6.a: habit — одна відправка, без нащадка; +30 хв → missed", async () => {
     const tg = mockTelegram();
     const u = await user();
-    await createRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["08:00"], daysMask: 127 }, T0);
+    await seedRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["08:00"], daysMask: 127 }, T0);
     for (const t of [S8, S8 + 5 * MIN, S8 + 29 * MIN]) await tick(t);
     expect(pushes(tg)).toHaveLength(1);
     expect(kbOf(pushes(tg)[0]!)[0]![0]!.text).toBe("✅ зробив");
@@ -361,7 +382,7 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
   it("4.6.b: пізнє «✅» на старому повідомленні після missed → taken, +10 один раз", async () => {
     mockTelegram({ seqIds: true });
     const u = await user();
-    await createRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["08:00"], daysMask: 127 }, T0);
+    await seedRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["08:00"], daysMask: 127 }, T0);
     await tick(S8);
     await tick(S8 + 30 * MIN);
     const root = (await remRows())[0]!;
@@ -400,7 +421,68 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
     expect(await logs()).toEqual([]);
   });
 
-  it("4.5.h: тиха ніч рутин не стосується; пауза — так: після паузи в межах 3 год іде, пізніше — cancelled без routine_logs", async () => {
+  it("В1 (R-4, 4.5.h): TTL від fire_at, не від slot_at — «+15 хв» о 12:00 на слот 08:00 після missed → пуш о 12:15", async () => {
+    const tg = mockTelegram({ seqIds: true });
+    const u = await user();
+    await med(u);
+    for (const t of [S8, S8 + 5 * MIN, S8 + 20 * MIN, S8 + 50 * MIN, S8 + 80 * MIN]) await tick(t);
+    expect(await logs()).toEqual([{ status: "missed", answered_at: null, scheduled_for: S8 }]);
+    const root = (await remRows())[0]!;
+    await press(`rt:${root.id}:s15`, S8 + 4 * 60 * MIN); // 12:00 — слоту вже 4 год, більше за ROUTINE_TTL_MS
+    expect(toast(tg)).toBe("нагадаю о 12:15");
+    await tick(S8 + 4 * 60 * MIN + 15 * MIN);
+    expect(pushes(tg)).toHaveLength(5);
+    expect((await remRows()).filter((r) => r.fire_at === S8 + 255 * MIN)).toMatchObject([{ kind: "routine", slot_at: S8, attempt: 1, status: "sent" }]);
+  });
+
+  describe("4.5.i анти-шум: рядок рутини не чекає ліміту 6/год і сам у нього входить", () => {
+    // Окремі пуші записів за останню годину (прямий SQL) і `due` запису, що спрацьовує разом з рутиною о 08:00.
+    const filler = async (u: number, n: number) => {
+      for (let i = 0; i < n; i++) {
+        const itemId = (await create(u, db(), { kind: "task", title: `пуш ${i}`, source: "text" }, T0)).id;
+        await DB.prepare(
+          "INSERT INTO reminders (user_id, item_id, kind, fire_at, attempt, max_attempts, status, sent_at, sent_as, tg_message_id, created_at) VALUES (?, ?, 'due', ?, 1, 1, 'sent', ?, 'single', 5, ?)",
+        )
+          .bind(u, itemId, S8 - 30 * MIN, S8 - 30 * MIN + i * MIN, T0)
+          .run();
+      }
+    };
+    const dueAt8 = async (u: number) => {
+      const itemId = (await create(u, db(), { kind: "task", title: "Корм коту", source: "text" }, T0)).id;
+      return (await DB.prepare("INSERT INTO reminders (user_id, item_id, kind, fire_at, attempt, max_attempts, created_at) VALUES (?, ?, 'due', ?, 1, 1, ?) RETURNING id")
+        .bind(u, itemId, S8, T0)
+        .first<{ id: number }>())!.id;
+    };
+    const sentAs = async (id: number) => (await DB.prepare("SELECT status, sent_as FROM reminders WHERE id = ?").bind(id).first())!;
+
+    it("(а) 6 окремих за годину → рутина йде одразу окремим повідомленням, запис — зведенням без рутини", async () => {
+      const tg = mockTelegram({ seqIds: true });
+      const u = await user();
+      await med(u);
+      await filler(u, 6);
+      const item = await dueAt8(u);
+      await tick(S8);
+      expect(pushes(tg)).toHaveLength(1);
+      expect(textOf(pushes(tg)[0]!)).toContain("Вітамін D");
+      expect(textOf(pushes(tg)[0]!)).not.toContain("Корм коту");
+      expect((await remRows()).filter((r) => r.slot_at === S8 && r.attempt === 1)).toMatchObject([{ status: "sent" }]);
+      expect(await DB.prepare("SELECT sent_as FROM reminders WHERE routine_id IS NOT NULL AND sent_at IS NOT NULL").all()).toMatchObject({ results: [{ sent_as: "single" }] });
+      expect(await sentAs(item)).toEqual({ status: "sent", sent_as: "summary" });
+      expect(tg.sent().filter((c) => textOf(c).includes("Корм коту")).every((c) => !textOf(c).includes("Вітамін D"))).toBe(true);
+    });
+
+    it("(б) 5 окремих за годину + рутина о 08:00 → рутина стала 6-м single, тож запис тієї ж миті — уже зведенням", async () => {
+      mockTelegram({ seqIds: true });
+      const u = await user();
+      await med(u);
+      await filler(u, 5);
+      const item = await dueAt8(u);
+      await tick(S8);
+      expect(await sentAs(item)).toEqual({ status: "sent", sent_as: "summary" });
+    });
+  });
+
+  it("4.5.h: тиха ніч рутин не стосується; пауза тримає звичку: після паузи в межах 3 год іде, пізніше — cancelled без routine_logs", async () => {
     const tg = mockTelegram({ seqIds: true });
     const u = await user();
     await DB.prepare("UPDATE users SET quiet_from = 1380, quiet_to = 480 WHERE id = ?").bind(u).run();
@@ -411,7 +493,7 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
 
     await DB.prepare("DELETE FROM reminders").run();
     await DB.prepare("DELETE FROM routines").run();
-    await med(u, { times: ["08:00"] });
+    await med(u, { times: ["08:00"], kind: "habit" }); // В4: паузу тримають лише звички
     await DB.prepare("UPDATE users SET pause_until = ? WHERE id = ?").bind(S8 + 60 * MIN, u).run();
     await tick(S8);
     expect(pushes(tg)).toHaveLength(1); // пауза: чекає
@@ -425,6 +507,27 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
     expect(pushes(tg)).toHaveLength(2);
     expect((await remRows()).map((r) => r.status)).toContain("cancelled");
     expect(await logs()).toEqual([]);
+  });
+
+  it("В4 (R-4, рішення Дениса): ліки ігнорують /pause — корінь і 3 повтори вчасно; звичка того ж слота чекає кінця паузи", async () => {
+    const tg = mockTelegram({ seqIds: true });
+    const u = await user();
+    await med(u, { times: ["08:00"] });
+    await seedRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["08:00"], daysMask: 127 }, T0);
+    await DB.prepare("UPDATE users SET pause_until = ? WHERE id = ?").bind(S8 + 2 * 60 * MIN, u).run();
+    for (const t of [S8, S8 + 5 * MIN, S8 + 20 * MIN, S8 + 50 * MIN]) await tick(t);
+    const titled = (t: string) => pushes(tg).filter((c) => textOf(c).includes(t));
+    expect(titled("Вітамін D")).toHaveLength(4);
+    expect(titled("Прогулянка")).toHaveLength(0);
+    const medRows = (await remRows()).filter((r) => r.max_attempts === 4 && r.slot_at === S8);
+    expect(medRows.map((r) => [r.attempt, r.status, (r.sent_at! - S8) / MIN])).toEqual([
+      [1, "sent", 0],
+      [2, "sent", 5],
+      [3, "sent", 20],
+      [4, "sent", 50],
+    ]);
+    await tick(S8 + 2 * 60 * MIN); // пауза скінчилась — звичка йде (у межах ROUTINE_TTL_MS)
+    expect(titled("Прогулянка")).toHaveLength(1);
   });
 
   it("4.5.k: 403 на корені 08:00, тики 08:01…08:05 → 1 виклик Telegram і 1 корінь", async () => {
@@ -532,9 +635,13 @@ describe("S4.8–S4.9 огляди", () => {
   it("4.8.a–b: ранок — один рядок за першим часом, ✓ лише біля taken; понад 5 → «…ще N»", async () => {
     const u = await user();
     const m = await med(u, { times: ["08:00", "20:00"] });
-    await createRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["19:00"], daysMask: 127 }, T0);
-    await createRoutine(u, db(), { kind: "habit", title: "Вихідний", times: ["07:00"], daysMask: 64 }, T0); // лише Нд
+    await seedRoutine(u, db(), { kind: "habit", title: "Прогулянка", times: ["19:00"], daysMask: 127 }, T0);
+    await seedRoutine(u, db(), { kind: "habit", title: "Вихідний", times: ["07:00"], daysMask: 64 }, T0); // лише Нд
     await log(u, m, S8, "taken");
+    expect(await morningRoutines(u, db(), "Europe/Kyiv", DAY0, DAY1)).toBe("💊 Сьогодні: Вітамін D 08:00 ✓, 20:00 · 🔁 Прогулянка 19:00");
+    // Д1 (R-4): `skipped` і `missed` не позначаються ніяк — ні ✓, ні іншим знаком
+    await log(u, m, Date.parse("2026-11-20T18:00:00Z"), "skipped");
+    await log(u, (await routineIds())[1]!, Date.parse("2026-11-20T17:00:00Z"), "missed");
     expect(await morningRoutines(u, db(), "Europe/Kyiv", DAY0, DAY1)).toBe("💊 Сьогодні: Вітамін D 08:00 ✓, 20:00 · 🔁 Прогулянка 19:00");
     for (let i = 0; i < 5; i++) await med(u, { title: `р${i}`, times: [`1${i}:00`] });
     expect(await morningRoutines(u, db(), "Europe/Kyiv", DAY0, DAY1)).toMatch(/ · …ще 2$/);
