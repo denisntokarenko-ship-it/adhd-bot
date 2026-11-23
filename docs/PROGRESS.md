@@ -34,7 +34,7 @@
 | 4.0 | Специфікація Фази 4 · 🔒 | Opus 5.5 | high | `phase-4/00-spec` | ✅ | ✅ |
 | 4.1 | Схема рутин і шар даних · 🔒 | Opus 5.5 | high | `phase-4/01-routines-data` | ✅ | ✅ |
 | 4.2 | Майстер рутин і ескалація до відповіді | Opus 5.5 | high | `phase-4/02-routines-bot` | ✅ | — |
-| R-4 | Незалежне рев'ю Фази 4 | Opus 5.5 | high | `review/phase-4` | ✅ (виправлення `fix/phase-4-review`: В1–В3, Д1, Д3, Д4) | ✅ |
+| R-4 | Незалежне рев'ю Фази 4 | Opus 5.5 | high | `review/phase-4` | ✅ (виправлення `fix/phase-4-review`: В1–В4, Д1, Д3, Д4) | ✅ |
 | 4.3 | Викатка Фази 4 · 👤 | Opus 5.5 | high | `phase-4/03-release` | ⬜ | — |
 | 5.0 | Специфікація Фази 5 · 🔒 | Opus 5.5 | high | `phase-5/00-spec` | ⬜ | ⬜ |
 | 5.1 | Мікрокроки через Sonnet · 🔒 | Opus 5.5 | high | `phase-5/01-microsteps` | ⬜ | ⬜ |
@@ -122,6 +122,7 @@
 - **2026-11-23** 4.1.c — `0006` на preview: bookmark до `0000000f-000005dd-0000512c-de0c2a59a5221f4067c6e4a8fe0deeb3`; `count(*)` 9 таблиць до = після (reminders 50 = 50), `sqlite_sequence.reminders` 50 = 50 — запис у `sqlite_sequence` на remote D1 дозволено; `foreign_key_check` 0, `reminders_new` немає, FK `reminders` → routines/reminders/items/users; preview задеплоєно `1b236d9`, cron живий. (4.1)
 - **2026-11-23** 4.2: рядок рутини — окрема гілка `dispatchUser` (як огляди); `claimDueReminders` бере рядки рутин із виключенням лише за паузою (`listQuietUserIds(…, pauseOnly)`, нової функції в `system.ts` не додавали — закритий список). ▶️ створює корінь слота `≥ now` (4.7.d), відповідь/«+15» — один batch з умовами в SQL. Тест S3.1.i уточнено за Р4.6: огляди беруть рутини лише через `routines/digest`. (4.2)
 - **2026-11-23** Живий прогін 4.2 на preview (диспетчер, `f52e1bc`): майстер `/routines` → 💊 «тест» 18:15 щодня → корінь слота `pending`; без відповіді — 4 `sent` (16:15:31, 16:21:27, 16:36:30, 17:07:29 UTC — інтервали 5/15/30 хв), наступний корінь на завтра створено одразу; `routine_logs` `missed`, `answered_at NULL` о 17:38:26 (перший тік після +30 хв); жодного повідомлення після `missed`. Тестова рутина лишається на preview (щодня 18:15 Київ). (4.2)
+- **2026-11-23** fix R-4 (`fix/phase-4-review`): створення й зміна рутини — один шлях, чернетка (`saveDraft`, `takeTitleInput`); `createRoutine`/`updateRoutine` прибрано, `logAnswer` → `logMissed`, фікстура тестів `seedRoutine` = `startDraft` + `saveDraft`. **В4, рішення Дениса:** ліки (`med`) ігнорують `/pause` (`claimDueReminders`), звички — ні (`decisions.md`). Мутанти R2, R4, F1–F6, B4a/b — KILLED; ті самі R2…F6 на `origin/main` — SURVIVED. (R-4)
 ## Нотатка для наступного кроку
 
-4.2 ✅ і живий прогін на preview пройдено (рядок у «Рішення»). Далі R-4 — незалежне рев'ю Фази 4 (`docs/reviews/phase-4.md`); потім 4.3 — викатка `0006` + 4.1/4.2 на prod за RUNBOOK. На preview є тестова рутина «тест» (id 1, 18:15 щодня) — можна використати в наскрізному сценарії.
+R-4 ✅ після `fix/phase-4-review` (В1–В4, Д1, Д3, Д4; Д2, Д5, Д6 — «Борг» R-4). Далі 4.3 — викатка `0006` + 4.1/4.2/fix на prod за RUNBOOK. **До 4.3 — preview на коді fix (диспетчер)** і живцем: `/pause` → 💊 приходить, 🔁 чекає (В4 змінює поведінку, якої не було в живому прогоні 4.2). На preview — тестові рутини «тест» (id 1) і id 2 (⏸).
