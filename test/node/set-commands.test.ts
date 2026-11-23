@@ -5,8 +5,8 @@ import { parseTz } from "../../src/settings/tz";
 
 // S3.9: меню команд. Висновок «ГОТОВО» — за ВІДПОВІДДЮ getMyCommands; токен скрипт не друкує (як set-webhook.mjs).
 describe("scripts/set-commands.mjs", () => {
-  it("меню: /today · /settings · /pause · /resume · /export; /start, /quiet, /tz працюють, але не в меню", () => {
-    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(["today", "settings", "pause", "resume", "export"]);
+  it("меню: /today · /routines (S4.2) · /settings · /pause · /resume · /export; /start, /quiet, /tz працюють, але не в меню", () => {
+    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(["today", "routines", "settings", "pause", "resume", "export"]);
     for (const hidden of ["start", "quiet", "tz"]) expect(BOT_COMMANDS.map((c) => c.command)).not.toContain(hidden);
   });
 

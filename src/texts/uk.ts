@@ -338,3 +338,63 @@ export const ST_WARN_NOT = "⚠ {what} зараз у тихих годинах �
 export const ST_WHAT_MORNING = "ранковий огляд";
 export const ST_WHAT_EVENING = "вечірній огляд";
 export const ST_WARN_HINT = "Можна пересунути його на годину поза тихою ніччю";
+
+// ── Фаза 4: рутини (docs/spec/phase-4.md). Ні слова про пропуски, жодного числа пропусків (принцип 4, 4.5.j). ──
+// Пуш рутини: «💊 <назва>» / «🔁 <назва>» + голова з пулу; `{t}` — екранована назва (НФ-9). Повтор — м'якший пул.
+export const ROUTINE_MED_POOL: readonly string[] = ["💊 <b>{t}</b> — саме час", "💊 Час для: <b>{t}</b>", "💊 <b>{t}</b> — твій момент", "💊 Нагадую: <b>{t}</b>"];
+export const ROUTINE_HABIT_POOL: readonly string[] = ["🔁 <b>{t}</b> — саме час", "🔁 Час для: <b>{t}</b>", "🔁 <b>{t}</b> — твій момент", "🔁 Нагадую: <b>{t}</b>"];
+export const ROUTINE_REPEAT_POOL: readonly string[] = ["{e} <b>{t}</b> — я поруч, без поспіху", "{e} Ще раз м'яко: <b>{t}</b>", "{e} <b>{t}</b> — коли буде зручно", "{e} Тихенько нагадую: <b>{t}</b>"];
+export const BTN_RT_TAKEN = "✅ прийняв";
+export const BTN_RT_DONE = "✅ зробив";
+export const BTN_RT_SKIP = "пропущу";
+export const BTN_RT_LATER = "+15 хв";
+export const ACK_TAKEN_POOL: readonly string[] = ["Є! +10 ✨", "Записав 💪 +10 ✨", "Красунчик 🙌 +10 ✨", "Готово, +10 ✨"];
+export const ACK_SKIP_POOL: readonly string[] = ["Ок, цей раз без нього", "Добре, цей раз так", "Прийнято 👌", "Гаразд, записав"];
+export const RT_LATER_TOAST = "нагадаю о {t}";
+export const RT_ALREADY = "уже записав";
+export const RT_TAKEN_MARK = "✅ записав"; // «💊 <b>назва</b> — ✅ записав»
+export const RT_SKIP_MARK = "ок, цей раз без нього";
+export const RT_LATER_MARK = "нагадаю о {t}";
+
+// Майстер (S4.2) і список (S4.7).
+export const RW_INTRO = "Тут живуть ліки й звички, про які я нагадую за розкладом. Що додамо?";
+export const RW_LIST_HEAD = "Твої рутини:";
+export const BTN_RW_MED = "💊 Ліки";
+export const BTN_RW_HABIT = "🔁 Звичка";
+export const BTN_RW_CANCEL = "✖ Скасувати";
+export const BTN_RW_MORE_TIME = "➕ ще час";
+export const BTN_RW_NEXT = "Далі →";
+export const BTN_RW_SAVE = "✅ Зберегти";
+export const BTN_RW_EVERY = "Щодня";
+export const BTN_RW_WEEKDAYS = "Будні";
+export const RW_TITLE_ASK = "Як назвати? Коротко, до 64 символів. Назву я нікуди не передаю — ні ШІ, ні розпізнаванню";
+export const RW_TITLE_BAD = "трохи коротше, в один рядок 🙂";
+export const RW_TITLE_TEXT_ONLY = "назву — лише текстом 🙂; якщо це був запис — надішли після майстра";
+export const RW_HOUR_ASK = "О котрій? Спершу година";
+export const RW_MINUTE_ASK = "А хвилини?";
+export const RW_TIMES = "Час: {t}";
+export const RW_DAYS_ASK = "По яких днях?";
+export const RW_NO_DAYS = "хоч один день";
+export const RW_QUIET_NOTE = "нагадаю й у тихі години: це ти обрав сам";
+export const RW_CANCELLED = "скасував, нічого не зберіг";
+export const RW_DEAD = "майстер закрився — почнімо спочатку: /routines";
+export const RW_SAVED = "Готово! Перше нагадування прийде вчасно 🌱";
+export const RW_ALREADY_SAVED = "уже збережено";
+export const RW_LIMIT = "20 рутин — це межа; можна поставити якусь на паузу або змінити";
+export const RW_EVERY_DAY = "щодня";
+export const RW_WEEKDAYS_LABEL = "будні";
+export const RW_DAY_NAMES: readonly string[] = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
+export const BTN_RL_TIME = "⏰ Час";
+export const BTN_RL_DAYS = "📅 Дні";
+export const BTN_RL_TITLE = "✏️ Назва";
+export const BTN_RL_PAUSE = "⏸ Пауза";
+export const BTN_RL_RESUME = "▶️ Увімкнути";
+export const BTN_RL_LIST = "← Список";
+export const RL_NOT_FOUND = "не знайшов";
+export const RL_PAUSED = "на паузі — нагадувань не буде, доки не ввімкнеш";
+export const RL_UPDATED = "Оновив 👌";
+
+// Огляди (S4.8–S4.9): ранок — рутини дня одним рядком; вечір — лише прийняте.
+export const DIGEST_ROUTINES_TODAY = "Сьогодні:"; // «💊 Сьогодні: Вітамін D 08:00 ✓, 20:00 · 🔁 Прогулянка 19:00»
+export const DIGEST_ROUTINES_EVENING = "💊 рутини: {n} з {m} ✅";
+export const DIGEST_ROUTINES_ALL = "💊 рутини: усі ✅";

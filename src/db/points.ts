@@ -33,6 +33,19 @@ export function doneStatement(userId: number, db: Db, itemId: number, now: numbe
     .bind(userId, itemId, now, DONE_POINTS);
 }
 
+// +10 «✅» на слот рутини (S4.5.b, крок 4.2) як частина `DB.batch` відповіді: лише для рядка `routine_logs` цього
+// користувача, що саме став `taken` у цій миті. Друге «✅» на слот назавжди відсікає `ux_ledger_routine_done` (4.5.c).
+export function routineDoneStatement(userId: number, db: Db, routineId: number, slotAt: number, now: number): D1PreparedStatement {
+  return d1Of(db)
+    .prepare(
+      `INSERT INTO points_ledger (user_id, delta, reason, routine_log_id, created_at)
+       SELECT ?1, ?5, 'done', g.id, ?4 FROM routine_logs g
+       WHERE g.user_id = ?1 AND g.routine_id = ?2 AND g.scheduled_for = ?3 AND g.status = 'taken' AND g.answered_at = ?4
+       ON CONFLICT DO NOTHING`,
+    )
+    .bind(userId, routineId, slotAt, now, DONE_POINTS);
+}
+
 export async function balance(userId: number, db: Db): Promise<number> {
   const row = await d1Of(db)
     .prepare("SELECT COALESCE(SUM(delta), 0) AS total FROM points_ledger WHERE user_id = ?1")

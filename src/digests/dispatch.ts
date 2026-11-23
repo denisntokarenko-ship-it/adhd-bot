@@ -23,6 +23,7 @@ import { RUN_BUDGET_MS } from "../reminders/plan";
 import { classify, errorClass } from "../reminders/send-failure";
 import { dayBounds } from "../time";
 import { eveningMessage, morningMessage, weeklyMessage } from "./render";
+import { eveningRoutines, morningRoutines } from "../routines/digest";
 import { DIGEST_ORDER, DIGEST_TTL_MS, STUCK_DAYS, WARM_EVERY_DAYS, WEEKLY_ITEMS, digestLimit, localDayDiff, nextDigestAt, type DigestKind } from "./schedule";
 
 export interface DigestCtx {
@@ -56,19 +57,21 @@ async function build(c: DigestCtx, userId: number, u: DigestUser, r: Reminder, n
       return { text: DIGEST_WARM_POOL[idx] ?? DIGEST_WARM_POOL[0] ?? "", keyboard: [], variantIdx: null, warmIdx: idx, shown: [] };
     }
     const idx = await headIdx(DIGEST_MORNING_POOL);
-    const m = morningMessage({ head: DIGEST_MORNING_POOL[idx] ?? "", events: content.events, tasks: content.tasks, all: false, tz: u.tz, dayStart: start, dayEnd: end });
+    const routines = await morningRoutines(userId, c.db, u.tz, start, end);
+    const m = morningMessage({ head: DIGEST_MORNING_POOL[idx] ?? "", events: content.events, tasks: content.tasks, all: false, tz: u.tz, dayStart: start, dayEnd: end, routines });
     return { text: m.text, keyboard: m.keyboard, variantIdx: idx, warmIdx: null, shown: m.shown };
   }
   if (kind === "digest_evening") {
     const to = Math.min(now, end); // запізнілий вечір показує свою добу, не наступну
-    const [done, pointsToday, bal, hanging] = await Promise.all([
+    const [done, pointsToday, bal, hanging, routines] = await Promise.all([
       doneBetween(userId, c.db, start, to),
       pointsBetween(userId, c.db, start, to),
       balance(userId, c.db),
       hangingBetween(userId, c.db, start, to),
+      eveningRoutines(userId, c.db, start, end),
     ]);
     const idx = await headIdx(DIGEST_EVENING_POOL);
-    const text = eveningMessage({ head: DIGEST_EVENING_POOL[idx] ?? "", done, pointsToday, balance: bal, hanging });
+    const text = eveningMessage({ head: DIGEST_EVENING_POOL[idx] ?? "", done, pointsToday, balance: bal, hanging, routines });
     return text === null ? null : { text, keyboard: [], variantIdx: idx, warmIdx: null, shown: [] };
   }
   const stuck = await stuckTasks(userId, c.db, start, now - STUCK_DAYS * 86_400_000, WEEKLY_ITEMS);

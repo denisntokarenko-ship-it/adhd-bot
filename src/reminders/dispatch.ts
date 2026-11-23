@@ -27,6 +27,7 @@ import { poolFor, singleMessage, summaryMessage, type SummaryLine } from "./rend
 import { classify } from "./send-failure";
 import { dispatchDigests } from "../digests/dispatch";
 import { isDigestKind } from "../digests/schedule";
+import { dispatchRoutineRows, isRoutineRow } from "../routines/dispatch";
 
 export interface DispatchDeps {
   rand?: () => number;
@@ -38,7 +39,8 @@ export async function dispatchReminders(env: AppEnv, clock: Clock, deps: Dispatc
   const start = clock.now();
   await cancelStaleReminders(db, start, STALE_MS);
   const quiet = await listQuietUserIds(db, start);
-  const claimed = await claimDueReminders(db, start, CLAIM_LIMIT, quiet);
+  const paused = await listQuietUserIds(db, start, true); // рядки рутин тиша не тримає, пауза — так (S4.5.h)
+  const claimed = await claimDueReminders(db, start, CLAIM_LIMIT, quiet, paused);
   if (claimed.length === 0) return; // порожня черга: один запит claim, без записів
 
   const unsent = new Set(claimed.map((r) => r.id));
@@ -91,7 +93,10 @@ async function dispatchUser(c: Ctx, userId: number, claimedAll: Reminder[]): Pro
   // Огляди (S3.1) — окрема гілка ДО перевірки запису й добору: не зливаються в зведення, не чекають ліміту 6/год.
   // Ранок (S3.4) може забрати `due` відрендерених записів: їх із подальшої відправки прибираємо.
   const digests = claimedAll.filter((r) => isDigestKind(r.kind));
-  let claimed = claimedAll.filter((r) => !isDigestKind(r.kind));
+  // Рутини (S4.5) — теж окрема гілка: без перевірки запису, зведення й очікування ліміту (4.5.i).
+  const routines = claimedAll.filter(isRoutineRow);
+  let claimed = claimedAll.filter((r) => !isDigestKind(r.kind) && !isRoutineRow(r));
+  if (routines.length > 0) await dispatchRoutineRows(c, userId, routines);
   if (digests.length > 0) {
     const gone = await dispatchDigests(c, userId, digests, claimed);
     claimed = claimed.filter((r) => !gone.has(r.id));

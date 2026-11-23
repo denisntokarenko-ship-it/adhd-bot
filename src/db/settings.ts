@@ -2,6 +2,7 @@
 // посеред нічого не застосовує (3.8.e). Читання (користувач, записи, корені) — до batch, усі оператори готуються
 // наперед; умови в SQL (`status='pending'`, `due_at = старе`) стережуть гонку між читанням і записом.
 // Кожна функція — з `userId` першим (НФ-3): чужі записи й рядки не чіпаються.
+import { retimeRootsStatements } from "./routines";
 import { lastSentFireAt } from "./digests";
 import { d1Of, type Db } from "./index";
 import { affectedDigests, nextDigestAt } from "../digests/schedule";
@@ -93,6 +94,8 @@ export async function applySetting(userId: number, db: Db, change: SettingChange
   const stmts: D1PreparedStatement[] = [];
 
   stmts.push(d1.prepare(`UPDATE users SET ${change.field} = ?2 WHERE id = ?1`).bind(userId, change.value));
+  // Рутини (4.7.e): невідправлені корені → DELETE і нові за новим `tz` — тим самим batch.
+  if (change.field === "tz") stmts.push(...(await retimeRootsStatements(userId, db, newS.tz, now)));
 
   // ── Записи й корені: лише для зміни `tz` та `morning_at` ───────────────────────────────────────────────
   if (change.field === "tz" || change.field === "morning_at") {

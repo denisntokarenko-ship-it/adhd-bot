@@ -54,6 +54,7 @@ export interface MorningInput {
   tz: string;
   dayStart: number;
   dayEnd: number;
+  routines?: string | null; // рядок рутин дня (S4.8) — після подій і справ; сам ранок непорожнім не робить (4.8.c)
 }
 
 export interface MorningMessage {
@@ -73,6 +74,7 @@ export function morningMessage(m: MorningInput): MorningMessage {
     lines.push({ text: DIGEST_TASKS_LABEL, item: false });
     for (const t of tasks) lines.push({ text: timed(t, m.tz, m.dayStart, m.dayEnd), item: true });
   }
+  if (m.routines) lines.push({ text: m.routines, item: false });
   const more = !m.all && m.tasks.length > MORNING_TASKS;
   return {
     text: fit(lines),
@@ -87,16 +89,18 @@ export interface EveningInput {
   pointsToday: number;
   balance: number;
   hanging: DigestItem[];
+  routines?: string | null; // «💊 рутини: N з M ✅» (S4.9); N = 0 — рядка немає
 }
 
 // Порожньо (нічого не зроблено, 0 очок дня, нічого не висить) → null: огляд не надсилається, без фрази (S3.5).
 export function eveningMessage(e: EveningInput): string | null {
-  if (e.done.length === 0 && e.pointsToday <= 0 && e.hanging.length === 0) return null;
+  if (e.done.length === 0 && e.pointsToday <= 0 && e.hanging.length === 0 && !e.routines) return null;
   const lines: Line[] = [{ text: e.head, item: false }];
   if (e.done.length > 0) {
     lines.push({ text: DIGEST_DONE_LABEL, item: false });
     for (const d of e.done) lines.push({ text: `• ${clipTitle(d.title)}`, item: true });
   }
+  if (e.routines) lines.push({ text: e.routines, item: false });
   const bal = DIGEST_BALANCE.replace("{n}", String(e.balance));
   lines.push({ text: e.pointsToday > 0 ? `${DIGEST_POINTS.replace("{n}", String(e.pointsToday))} · ${bal}` : bal, item: false });
   if (e.hanging.length > 0) {

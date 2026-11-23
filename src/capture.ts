@@ -20,6 +20,7 @@ import {
   type CaptureSource,
 } from "./db/captures";
 import type { Db } from "./db/index";
+import { deleteDraft } from "./db/routines";
 import type { User } from "./db/users";
 import { RetryableError } from "./errors";
 import { buildReceipt, type ReceiptEntry } from "./format";
@@ -294,6 +295,7 @@ export async function handleCallback(ctx: Context, d: CaptureDeps): Promise<void
   if ((await getById(d.user.id, d.db, id)) === null) return;
   const cap = await requestFix(d.user.id, d.db, id, d.clock.now());
   if (cap === null) return;
+  await deleteDraft(d.user.id, d.db, d.clock.now()); // 4.3.f: виграє останній намір — наступний текст іде у «Не так»
   const pool = m[1] === "clar" ? CLARIFY_ASK_POOL : FIX_ASK_POOL;
   await ctx.reply(pick(pool, null, d.rand).text);
 }

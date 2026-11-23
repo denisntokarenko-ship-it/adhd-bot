@@ -10,6 +10,7 @@ import { ACK_REL_POOL, DIGEST_MORNING_POOL, DIGEST_WEEKLY_POOL, SOON_POOL, UNKNO
 import { escapeHtml } from "../format";
 import { dayBounds } from "../time";
 import { morningMessage, weeklyRow } from "./render";
+import { morningRoutines } from "../routines/digest";
 
 const WK_RE = /^wk:(t|s|r):(\d{1,15})$/;
 
@@ -31,7 +32,8 @@ async function handleAll(ctx: Context, d: ButtonDeps): Promise<string | undefine
   const [start, end] = dayBounds(u.tz, now);
   const content = await morningContent(userId, d.db, start, end, now);
   const idx = (await lastDigestVariantIdx(userId, d.db, "digest_morning")) ?? 0;
-  const m = morningMessage({ head: DIGEST_MORNING_POOL[idx] ?? DIGEST_MORNING_POOL[0] ?? "", events: content.events, tasks: content.tasks, all: true, tz: u.tz, dayStart: start, dayEnd: end });
+  const routines = await morningRoutines(userId, d.db, u.tz, start, end);
+  const m = morningMessage({ head: DIGEST_MORNING_POOL[idx] ?? DIGEST_MORNING_POOL[0] ?? "", events: content.events, tasks: content.tasks, all: true, tz: u.tz, dayStart: start, dayEnd: end, routines });
   await edit(ctx, m.text, m.keyboard);
   return undefined;
 }

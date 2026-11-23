@@ -5,7 +5,7 @@ import { d1Of, type Db } from "./index";
 import { getById as getItem, type Item } from "./items";
 import { doneStatement } from "./points";
 
-export type ReminderKind = RootKind | "repeat" | "timer" | "digest_morning" | "digest_evening" | "digest_weekly";
+export type ReminderKind = RootKind | "repeat" | "timer" | "digest_morning" | "digest_evening" | "digest_weekly" | "routine";
 export type ReminderStatus = "pending" | "sent" | "answered" | "cancelled";
 
 export interface Reminder {
@@ -25,10 +25,12 @@ export interface Reminder {
   tg_message_id: number | null;
   variant_idx: number | null;
   created_at: number;
+  routine_id: number | null; // рядок рутини (Фаза 4): корінь `routine` і його повтори
+  slot_at: number | null;
 }
 
 export const REMINDER_COLUMNS =
-  "id, user_id, item_id, kind, fire_at, attempt, max_attempts, status, parent_id, root_id, lease_until, sent_at, sent_as, tg_message_id, variant_idx, created_at";
+  "id, user_id, item_id, kind, fire_at, attempt, max_attempts, status, parent_id, root_id, lease_until, sent_at, sent_as, tg_message_id, variant_idx, created_at, routine_id, slot_at";
 
 // Корінь ланцюга з `INSERT … SELECT` із власного відкритого запису: чужий чи закритий `item_id` → 0 рядків.
 // Ідемпотентність тримає БД (`ux_rem_root`), а не `if` у коді: дубль (item, kind, fire_at) мовчки не вставляється.
