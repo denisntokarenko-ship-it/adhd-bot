@@ -1,6 +1,7 @@
 // Рутини: ліки й звички (docs/spec/phase-4.md, S4.1, S4.4–S4.7). НФ-3: кожна функція бере `userId` першим і
 // кожен запит має `WHERE user_id = ?`; чужий `routine_id` нічого не читає й не змінює (4.1.d).
 // Дані звідси НІКОЛИ не йдуть у промпт ШІ (правило 4 CLAUDE.md, НФ-2): `src/ai/**` цей модуль не імпортує (тест-межа).
+import { LATE_MS } from "../reminders/plan";
 import { maxAttemptsFor, nextRoutineSlot, normalizeTimes, ROUTINES_MAX, validDaysMask, validTitle, WIZARD_TTL_MS, type RoutineKind } from "../routines/schedule";
 import { d1Of, type Db } from "./index";
 import { routineDoneStatement } from "./points";
@@ -122,10 +123,21 @@ export async function pauseRoutine(userId: number, db: Db, routineId: number, no
   return (upd!.meta.changes ?? 0) === 1;
 }
 
-// ▶️ (S4.7.d): `active = 1`; найближчий слот планує наступний тик (S4.4).
+// ▶️ (S4.7.d): `active = 1` і в тому ж batch корінь найближчого слота `≥ now` — не `≥ now − LATE_MS`, як у тику:
+// слот, що минув під час паузи (навіть щойно), не нагадується; планувальник бачить корінь і його не чіпає.
 export async function resumeRoutine(userId: number, db: Db, routineId: number, now: number): Promise<boolean> {
-  const res = await d1Of(db).prepare("UPDATE routines SET active = 1, updated_at = ?3 WHERE id = ?2 AND user_id = ?1").bind(userId, routineId, now).run();
-  return (res.meta.changes ?? 0) === 1;
+  const d1 = d1Of(db);
+  const r = await d1
+    .prepare("SELECT r.times AS times, r.days_mask AS days_mask, u.tz AS tz FROM routines r JOIN users u ON u.id = r.user_id WHERE r.id = ?2 AND r.user_id = ?1")
+    .bind(userId, routineId)
+    .first<{ times: string; days_mask: number; tz: string }>();
+  if (r === null) return false;
+  const slot = nextRoutineSlot({ times: JSON.parse(r.times) as string[], days_mask: r.days_mask }, r.tz, now + LATE_MS);
+  const [upd] = await d1.batch([
+    d1.prepare("UPDATE routines SET active = 1, updated_at = ?3 WHERE id = ?2 AND user_id = ?1").bind(userId, routineId, now),
+    rootStatement(userId, db, routineId, slot, now),
+  ]);
+  return (upd!.meta.changes ?? 0) === 1;
 }
 
 // Відповідь на слот (S4.5, S4.6) — ідемпотентно, тримає `UNIQUE(routine_id, scheduled_for)`, а не `if`:

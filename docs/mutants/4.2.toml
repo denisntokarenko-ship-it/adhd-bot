@@ -92,4 +92,12 @@ file = "src/routines/dispatch.ts"
 old = '''      const next = nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: sentAt });'''
 new = '''      const next = nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: r.fire_at });'''
 why = "4.5.a: повтор від fire_at, а не від фактичного sent_at"
-match = 'рівно 4 спроби'
+match = '4\.5\.a від sent_at'
+
+[[mutant]]
+id = "M10"
+file = "src/db/routines.ts"
+old = '''  const slot = nextRoutineSlot({ times: JSON.parse(r.times) as string[], days_mask: r.days_mask }, r.tz, now + LATE_MS);'''
+new = '''  const slot = nextRoutineSlot({ times: JSON.parse(r.times) as string[], days_mask: r.days_mask }, r.tz, now);'''
+why = "4.7.d: ▶️ планує слот, що минув під час паузи (у межах LATE_MS) -> нагадування про вже минулий прийом"
+match = '4\.7\.d'

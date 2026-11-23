@@ -297,6 +297,16 @@ describe("S4.5–S4.6 нагадування рутин, кнопки, missed", 
     expect(kbOf(pushes(tg)[0]!)[0]!.map((b) => b.text)).toEqual(["✅ прийняв", "пропущу", "+15 хв"]);
   });
 
+  it("4.5.a від sent_at: корінь пішов о 08:02 (тик запізнився) → повтор о 08:07, а не о 08:05", async () => {
+    mockTelegram({ seqIds: true });
+    const u = await user();
+    await med(u);
+    await planRoutines(db(), S8 - MIN);
+    await tick(S8 + 2 * MIN);
+    const rep = (await remRows()).find((r) => r.kind === "repeat")!;
+    expect([(rep.fire_at - S8) / MIN, rep.attempt]).toEqual([7, 2]);
+  });
+
   it("4.5.a, 4.6.a: habit — одна відправка, без нащадка; +30 хв → missed", async () => {
     const tg = mockTelegram();
     const u = await user();
@@ -457,6 +467,17 @@ describe("S4.7 /routines: список, картка, пауза, редагув
     await press(`rl:p:${other}`);
     expect(toast(tg)).toBe("не знайшов");
     expect((await rows<{ active: number }>("SELECT active FROM routines WHERE id = ?", other))[0]!.active).toBe(1);
+  });
+
+  it("4.7.d: ⏸ о 07:50, ▶️ о 08:03 → слот 08:00, що минув під час паузи, не нагадується; корінь — наступний слот", async () => {
+    const tg = mockTelegram();
+    const u = await user();
+    const id = await med(u, { times: ["08:00", "20:00"] });
+    await press(`rl:p:${id}`, S8 - 10 * MIN);
+    await press(`rl:r:${id}`, S8 + 3 * MIN);
+    await tick(S8 + 3 * MIN);
+    expect(pushes(tg)).toHaveLength(0);
+    expect((await remRows()).map((r) => [r.status, (r.slot_at - S8) / MIN])).toEqual([["pending", 720]]);
   });
 
   it("4.7.b: ✏️ Назва → текст → UPDATE title без Claude; чернетку закрито", async () => {
