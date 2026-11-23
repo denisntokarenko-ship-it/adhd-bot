@@ -1,0 +1,95 @@
+# Мутанти кроку 4.2 (майстер рутин, нагадування, кнопки, огляди). M1–M2 — з промпту 4.2; X1–X2 — вижилі мутанти
+# рев'ю 4.1 (Д1/Д2), тепер із тестами; M3–M9 — мутанти спеки (4.3.b, 4.3.f, 4.5.h, 4.9.b).
+# Запуск після коміту:  python scripts/mutate.py docs/mutants/4.2.toml --report docs/mutants/4.2.md
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/bot.ts"
+old = '''    if (draft !== null) {'''
+new = '''    if (false) {'''
+why = "прибрано перевірку стану майстра перед розбором -> назва ліків іде в parseCapture (Claude)"
+match = 'майстер не викликає Claude'
+
+[[mutant]]
+id = "M2"
+file = "src/routines/schedule.ts"
+old = '''export const maxAttemptsFor = (escalate: boolean) => (escalate ? MAX_ATTEMPTS_ESCALATING : 1);'''
+new = '''export const maxAttemptsFor = (escalate: boolean) => (escalate ? 1 : 1);'''
+why = "med з max 1 -> одна відправка замість чотирьох"
+match = 'рівно 4 спроби'
+
+[[mutant]]
+id = "X1"
+file = "src/db/system.ts"
+old = '''         AND NOT EXISTS (SELECT 1 FROM reminders p WHERE p.routine_id = r.routine_id AND p.slot_at = r.slot_at AND p.status = 'pending')
+'''
+new = ''''''
+why = "S4.6 без умови «немає pending рядків слота» -> missed, хоча корінь «+15» ще попереду (рев'ю 4.1 Д1)"
+match = 'Д1/X1'
+
+[[mutant]]
+id = "X2"
+file = "src/db/routines.ts"
+old = '''    AND NOT EXISTS (SELECT 1 FROM reminders s WHERE s.user_id = ?1 AND s.routine_id = reminders.routine_id
+                      AND s.slot_at = reminders.slot_at AND s.sent_at IS NOT NULL)`;'''
+new = '''`;'''
+why = "DELETE_UNSENT_ROOTS без «у слоті немає відправки» -> зміна часу стирає корінь «+15» ланцюга, що вже йде (рев'ю 4.1 Д2)"
+match = 'Д2/X2'
+
+[[mutant]]
+id = "M3"
+file = "src/db/captures.ts"
+old = '''            + (SELECT COUNT(*) FROM routine_inputs WHERE user_id = ?1 AND tg_update_id = ?2) AS n`,'''
+new = '''            AS n`,'''
+why = "4.3.b: isKnownUpdate без routine_inputs -> повтор голосового після ✖ кличе Whisper"
+match = '4\.3\.b'
+
+[[mutant]]
+id = "M4"
+file = "src/routines/handler.ts"
+old = '''  if (!(await takeTitleInput(d.user.id, d.db, updateId, ok ? title : null, now))) return;'''
+new = '''  if (ok && !(await takeTitleInput(d.user.id, d.db, updateId, title, now))) return;'''
+why = "4.3.b: routine_inputs лише для прийнятої назви -> повтор відхиленої після ✖ стає захопленням"
+match = '4\.3\.b'
+
+[[mutant]]
+id = "M5"
+file = "src/capture.ts"
+old = '''  await deleteDraft(d.user.id, d.db, d.clock.now()); // 4.3.f: виграє останній намір — наступний текст іде у «Не так»'''
+new = ''''''
+why = "4.3.f: «Не так» не видаляє живу чернетку -> текст іде в майстер, а не у виправлення"
+match = '4\.3\.f'
+
+[[mutant]]
+id = "M6"
+file = "src/reminders/dispatch.ts"
+old = '''  const claimed = await claimDueReminders(db, start, CLAIM_LIMIT, quiet, paused);'''
+new = '''  const claimed = await claimDueReminders(db, start, CLAIM_LIMIT, quiet, quiet);'''
+why = "4.5.h: тиха ніч тримає рутини -> ліки о 23:30 не приходять"
+match = '4\.5\.h'
+
+[[mutant]]
+id = "M7"
+file = "src/routines/dispatch.ts"
+old = '''    if (routine === null || !routine.active || now - r.fire_at > ROUTINE_TTL_MS || (await slotAnswered(userId, c.db, routine.id, r.slot_at!))) {'''
+new = '''    if (routine === null || !routine.active || (await slotAnswered(userId, c.db, routine.id, r.slot_at!))) {'''
+why = "4.5.h: без ROUTINE_TTL_MS рядок, що чекав паузу довше 3 год, усе одно йде"
+match = '4\.5\.h'
+
+[[mutant]]
+id = "M8"
+file = "src/routines/render.ts"
+old = '''  if (taken <= 0) return null;'''
+new = ''''''
+why = "4.9.b: N = 0 -> «0 з 2» у вечорі"
+match = '4\.9\.a–b'
+
+[[mutant]]
+id = "M9"
+file = "src/routines/dispatch.ts"
+old = '''      const next = nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: sentAt });'''
+new = '''      const next = nextRepeat({ attempt: r.attempt, max_attempts: r.max_attempts, sent_at: r.fire_at });'''
+why = "4.5.a: повтор від fire_at, а не від фактичного sent_at"
+match = 'рівно 4 спроби'
