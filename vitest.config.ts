@@ -21,6 +21,9 @@ export default defineConfig({
               // а CI без облікових даних Cloudflare не мусить підіймати віддалену проксі-сесію.
               remoteBindings: false,
               miniflare: {
+                // Окрема порожня база для тестів міграції `0006` (4.1.b): стан «0001–0005 + дані» → `0006`.
+                // Основну `DB` setup.ts уже довів до останньої міграції.
+                d1Databases: { MIG_DB: "mig-test" },
                 bindings: {
                   TEST_MIGRATIONS: migrations,
                   BOT_TOKEN: "123456789:TESTTOKEN",

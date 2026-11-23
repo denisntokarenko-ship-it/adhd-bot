@@ -184,3 +184,54 @@ export async function listUsersMissingDigests(db: Db): Promise<MissingDigest[]> 
     .all<MissingDigest>();
   return res.results;
 }
+
+// ── Фаза 4: рутини (S4.4, S4.6; НФ-3: виняток для вибірки по всіх користувачах, 4.1.d) ─────────────────────
+
+export interface RoutineToPlan {
+  id: number;
+  user_id: number;
+  times: string; // JSON-масив "HH:MM"
+  days_mask: number;
+  tz: string;
+}
+
+// Активні рутини без майбутнього (`pending`) кореня — кандидати на корінь найближчого слота (S4.4, Р4.10). Один запит
+// на тик; далі кожна дія — з `user_id` рядка. Корінь уже є → рутини тут немає, і тик не робить зайвого запису.
+export async function listRoutinesToPlan(db: Db): Promise<RoutineToPlan[]> {
+  const res = await d1Of(db)
+    .prepare(
+      `SELECT r.id AS id, r.user_id AS user_id, r.times AS times, r.days_mask AS days_mask, u.tz AS tz
+       FROM routines r JOIN users u ON u.id = r.user_id
+       WHERE r.active = 1
+         AND NOT EXISTS (SELECT 1 FROM reminders m WHERE m.routine_id = r.id AND m.parent_id IS NULL AND m.status = 'pending')
+       ORDER BY r.id`,
+    )
+    .all<RoutineToPlan>();
+  return res.results;
+}
+
+export interface UnansweredSlot {
+  user_id: number;
+  routine_id: number;
+  slot_at: number;
+}
+
+// Слоти для `missed` (S4.6): немає `pending` рядків слота, ОСТАННІЙ за `sent_at` рядок слота — `sent` з
+// `attempt = max_attempts` (ланцюг вичерпано, а не обірвано паузою, TTL чи 400/403), його `sent_at ≤ now − afterMs`,
+// і немає `routine_logs`. Ознака — у самому ланцюгу, не в `active` у мить прогону (▶️ після паузи її не змінює).
+export async function listUnansweredRoutineSlots(db: Db, now: number, afterMs: number): Promise<UnansweredSlot[]> {
+  const res = await d1Of(db)
+    .prepare(
+      `SELECT r.user_id AS user_id, r.routine_id AS routine_id, r.slot_at AS slot_at
+       FROM reminders r
+       WHERE r.routine_id IS NOT NULL AND r.status = 'sent' AND r.attempt = r.max_attempts AND r.sent_at <= ?1
+         AND NOT EXISTS (SELECT 1 FROM reminders p WHERE p.routine_id = r.routine_id AND p.slot_at = r.slot_at AND p.status = 'pending')
+         AND NOT EXISTS (SELECT 1 FROM reminders l WHERE l.routine_id = r.routine_id AND l.slot_at = r.slot_at AND l.sent_at IS NOT NULL
+                           AND (l.sent_at > r.sent_at OR (l.sent_at = r.sent_at AND l.id > r.id)))
+         AND NOT EXISTS (SELECT 1 FROM routine_logs g WHERE g.routine_id = r.routine_id AND g.scheduled_for = r.slot_at)
+       ORDER BY r.slot_at, r.routine_id`,
+    )
+    .bind(now - afterMs)
+    .all<UnansweredSlot>();
+  return res.results;
+}

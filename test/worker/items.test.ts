@@ -30,11 +30,11 @@ describe("S1.1 міграція 0002", () => {
     const tables = await names(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations' AND name NOT LIKE 'items_fts_%' ORDER BY name",
     );
-    expect(tables).toEqual(["ai_calls", "capture_fixes", "captures", "heartbeat", "items", "items_fts", "points_ledger", "reminders", "users"]); // reminders — 0004 (2.1)
+    expect(tables).toEqual(["ai_calls", "capture_fixes", "captures", "heartbeat", "items", "items_fts", "points_ledger", "reminders", "routine_drafts", "routine_inputs", "routine_logs", "routines", "users"]); // reminders — 0004 (2.1), routine_* — 0006 (4.1)
     const indexes = await names("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name");
-    expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_status_due", "ix_items_user_status_due", "ix_ledger_user", "ix_rem_due", "ix_rem_item", "ix_rem_user_sent"]);
+    expect(indexes).toEqual(["ix_ai_calls_user_day", "ix_captures_pending", "ix_items_capture", "ix_items_status_due", "ix_items_user_status_due", "ix_ledger_user", "ix_rem_due", "ix_rem_item", "ix_rem_routine", "ix_rem_user_sent", "ix_rlog_user_day", "ix_routines_user"]);
     const triggers = await names("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name");
-    expect(triggers).toEqual(["items_fts_ad", "items_fts_ai", "items_fts_au", "tg_captures_not_fix", "tg_fixes_not_capture", "trg_rem_digest_shape"]);
+    expect(triggers).toEqual(["items_fts_ad", "items_fts_ai", "items_fts_au", "tg_captures_not_fix", "tg_captures_not_routine_input", "tg_fixes_not_capture", "tg_fixes_not_routine_input", "trg_rem_digest_shape"]);
     expect(await names("SELECT name FROM pragma_table_info('items') ORDER BY cid")).toEqual([
       "id", "user_id", "capture_id", "kind", "title", "body", "raw_text", "source", "due_at", "all_day",
       "priority", "status", "travel_min", "created_at", "done_at", "snooze_count", "travel_asked_at", "planned_at", // 0004
